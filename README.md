@@ -60,8 +60,20 @@ to **integer minor units** — never handled as JS floats.
    different reference).
 3. **Off-hours & weekend** (`offHours.ts`) — timezone-aware (default
    `Asia/Riyadh`, weekend Fri–Sat, business hours 07:00–19:00).
+4. **VAT discrepancy** (`vat.ts`) — ZATCA standard 15% check: compares the
+   declared VAT against `round(base × rate)` in minor units (half-up), flagging
+   deviations beyond a configurable tolerance.
 
 `runAuditEngine()` composes them and returns findings ranked by score/severity.
+
+## Reconciliation engine (`src/lib/reconciliation`)
+
+`reconcile(sourceTxns, targetTxns, options)` matches two sources (e.g. Bank vs
+Ledger) by amount, value-date proximity, and reference/counterparty similarity.
+Matching is **greedy on descending confidence** (each entry used once), yielding
+`MATCHED` / `PARTIAL` (within an amount tolerance) / `UNMATCHED` results with a
+0–1 confidence and the amount delta. `reconciliationAnomalies()` turns residual
+unmatched entries into `UNRECONCILED` anomaly flags for the feed.
 
 ## Multi-tenancy & audit trail
 

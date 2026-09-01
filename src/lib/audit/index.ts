@@ -8,22 +8,26 @@
 import { detectBenfordDeviation } from "./benford";
 import { detectDuplicates, type DuplicateOptions } from "./duplicates";
 import { detectOffHours, type OffHoursOptions } from "./offHours";
+import { detectVatDiscrepancies, type VatOptions } from "./vat";
 import type { AnalyzableTransaction, DetectedAnomaly } from "./types";
 
 export * from "./types";
 export { analyzeBenford, detectBenfordDeviation } from "./benford";
 export { detectDuplicates } from "./duplicates";
 export { detectOffHours, zonedParts } from "./offHours";
+export { detectVatDiscrepancies, checkVat, expectedVatMinor } from "./vat";
 export { toMinorUnits, minorUnitsToString } from "./money";
 
 export interface EngineOptions {
   duplicates?: Partial<DuplicateOptions>;
   offHours?: Partial<OffHoursOptions>;
+  vat?: Partial<VatOptions>;
   /** Toggle individual analyzers (all on by default). */
   enable?: {
     benford?: boolean;
     duplicates?: boolean;
     offHours?: boolean;
+    vat?: boolean;
   };
 }
 
@@ -40,6 +44,7 @@ export function runAuditEngine(
     benford: true,
     duplicates: true,
     offHours: true,
+    vat: true,
     ...options.enable,
   };
 
@@ -53,6 +58,9 @@ export function runAuditEngine(
   }
   if (enable.offHours) {
     findings.push(...detectOffHours(transactions, options.offHours));
+  }
+  if (enable.vat) {
+    findings.push(...detectVatDiscrepancies(transactions, options.vat));
   }
 
   const severityRank: Record<DetectedAnomaly["severity"], number> = {
