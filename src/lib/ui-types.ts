@@ -57,3 +57,33 @@ export interface EngagementSummary {
   clientNameAr: string;
   fiscalYear: number;
 }
+
+export type ReconMatchStatus = "MATCHED" | "PARTIAL" | "UNMATCHED";
+
+export interface ReconMatchDTO {
+  id: string;
+  sourceRef: string;
+  sourceAmount: string;
+  targetRef: string | null;
+  status: ReconMatchStatus;
+  /** 0..1 as a decimal string. */
+  confidence: string;
+  amountDelta: string | null;
+}
+
+export interface ReconSessionDTO {
+  id: string;
+  name: string;
+  status: string;
+  sourceA: string;
+  sourceB: string;
+  matchedCount: number;
+  partialCount: number;
+  unmatchedCount: number;
+  totalCount: number;
+  matches: ReconMatchDTO[];
+}
+
+export interface ReconciliationResponse {
+  sessions: ReconSessionDTO[];
+}

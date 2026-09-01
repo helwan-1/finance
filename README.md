@@ -32,12 +32,15 @@ prisma/
 src/
   app/
     layout.tsx         # RTL + Arabic root layout
-    page.tsx           # Dashboard page
+    page.tsx           # Dashboard page (anomalies feed)
+    reconciliation/page.tsx  # Reconciliation results page
     globals.css
-    api/anomalies/route.ts   # Filtered, tenant-scoped anomalies API
+    api/anomalies/route.ts       # Filtered, tenant-scoped anomalies API
+    api/reconciliation/route.ts  # Tenant-scoped reconciliation sessions API
   components/
     layout/            # Sidebar, Header, EngagementSwitcher, DashboardShell
     anomalies/         # AnomaliesFeed, FilterBar, AnomalyCard, StatCards
+    reconciliation/    # ReconciliationView, SessionCard, MatchesTable
   lib/
     prisma.ts          # Prisma client singleton
     audit/             # Audit algorithms engine (see below)
