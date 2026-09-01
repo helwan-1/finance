@@ -114,6 +114,16 @@ extracted transactions in a single Prisma transaction.
 - Seed users (password `Audit@1234`): `partner@almeezan.sa` (PARTNER),
   `senior@almeezan.sa` (SENIOR).
 
+## Live updates (SSE)
+
+- `GET /api/stream?engagementId=...` is a Server-Sent Events channel. Resolving
+  an anomaly or uploading a document publishes an event on an in-process bus
+  (`src/lib/events.ts`); every connected dashboard receives it and refetches, so
+  changes made by one user appear in other tabs/users in real time.
+- The header shows a **مباشر / live** indicator; `useLiveUpdates()` manages the
+  `EventSource` and query invalidation. The in-process bus is the seam for Redis
+  pub/sub in a multi-instance deployment.
+
 ## Report export
 
 - **Excel:** `GET /api/anomalies/export` streams a real `.xlsx` (via `exceljs`,

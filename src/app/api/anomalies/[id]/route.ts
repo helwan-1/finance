@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { recordAuditLog } from "@/lib/audit-log";
+import { publishAuditEvent } from "@/lib/events";
 import type { AnomalyDTO } from "@/lib/ui-types";
 
 /** Resolution actions the client may request, mapped to status + audit action. */
@@ -109,6 +110,13 @@ export async function PATCH(
       entityType: "AnomalyFlag",
       entityId: params.id,
       metadata: note ? { note } : undefined,
+    });
+
+    // Broadcast to any live dashboards watching this engagement.
+    publishAuditEvent({
+      type: "anomaly.updated",
+      engagementId: existing.engagementId,
+      payload: { id: params.id, status: action.status },
     });
 
     const dto: AnomalyDTO = {

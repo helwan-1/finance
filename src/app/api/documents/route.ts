@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { DEMO_DOCUMENTS } from "@/lib/demo-documents";
 import { getParser } from "@/lib/ocr";
 import { authorize } from "@/lib/auth/guard";
+import { publishAuditEvent } from "@/lib/events";
 import type {
   DocumentDTO,
   DocumentType,
@@ -183,6 +184,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       return doc;
+    });
+
+    publishAuditEvent({
+      type: "document.created",
+      engagementId: engagement.id,
+      payload: { id: created.id, extracted: parsed.lines.length },
     });
 
     const dto: DocumentDTO = {
