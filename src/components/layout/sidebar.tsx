@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { Route } from "next";
 import {
   LayoutDashboard,
   FileText,
@@ -15,21 +18,23 @@ import { useUIStore } from "@/store/ui-store";
 interface NavItem {
   labelAr: string;
   icon: typeof LayoutDashboard;
-  active?: boolean;
+  /** Route when the destination exists; omit for not-yet-built sections. */
+  href?: Route;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { labelAr: "لوحة التحكم", icon: LayoutDashboard, active: true },
-  { labelAr: "المستندات", icon: FileText },
-  { labelAr: "المطابقة", icon: GitCompareArrows },
+  { labelAr: "لوحة التحكم", icon: LayoutDashboard, href: "/" },
+  { labelAr: "المستندات", icon: FileText, href: "/documents" },
+  { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
   { labelAr: "الحالات الشاذة", icon: ShieldAlert },
-  { labelAr: "التحليلات", icon: BarChart3 },
-  { labelAr: "سجل التدقيق", icon: ScrollText },
+  { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
+  { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
   { labelAr: "الإعدادات", icon: Settings },
 ];
 
 export function Sidebar() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const pathname = usePathname();
 
   return (
     <aside
@@ -55,16 +60,34 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 p-3">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
+          const active = item.href !== undefined && pathname === item.href;
+          const classes = `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+            active
+              ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-700/15"
+              : "text-[rgb(var(--muted))] hover:bg-black/5 dark:hover:bg-white/5"
+          }`;
+
+          if (item.href) {
+            return (
+              <Link
+                key={item.labelAr}
+                href={item.href}
+                className={classes}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                {sidebarOpen && <span>{item.labelAr}</span>}
+              </Link>
+            );
+          }
+
           return (
             <button
               key={item.labelAr}
               type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                item.active
-                  ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-700/15"
-                  : "text-[rgb(var(--muted))] hover:bg-black/5 dark:hover:bg-white/5"
-              }`}
-              aria-current={item.active ? "page" : undefined}
+              disabled
+              className={`${classes} cursor-not-allowed opacity-50`}
+              title="قريباً"
             >
               <Icon className="h-5 w-5 shrink-0" />
               {sidebarOpen && <span>{item.labelAr}</span>}

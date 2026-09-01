@@ -10,8 +10,13 @@ export interface AnalyzableTransaction {
   id: string;
   reference: string;
   description: string;
-  /** Decimal string, e.g. "1234.50". Converted to minor units internally. */
+  /**
+   * Decimal string, e.g. "1234.50". Treated as the taxable base (net amount)
+   * for VAT analysis. Converted to minor units internally.
+   */
   amount: string;
+  /** Declared VAT/tax amount as a decimal string, when known. */
+  vatAmount?: string | null;
   counterparty?: string | null;
   account?: string | null;
   /** ISO timestamp of when the entry was posted. */

@@ -14,8 +14,13 @@ import {
   TransactionSource,
   TransactionType,
 } from "@prisma/client";
-import { runAuditEngine } from "../src/lib/audit";
+import { minorUnitsToString, runAuditEngine } from "../src/lib/audit";
 import type { AnalyzableTransaction } from "../src/lib/audit";
+import {
+  reconcile,
+  reconciliationAnomalies,
+  type ReconcilableTxn,
+} from "../src/lib/reconciliation";
 
 const prisma = new PrismaClient();
 
@@ -142,6 +147,8 @@ async function main(): Promise<void> {
     postedAt: Date;
     type: TransactionType;
     source: TransactionSource;
+    /** Override the auto-computed 15% VAT to plant a discrepancy. */
+    vatOverride?: string;
   };
 
   const seeds: TxnSeed[] = [];
@@ -230,9 +237,24 @@ async function main(): Promise<void> {
     source: "MANUAL",
   });
 
+  // --- Planted: VAT discrepancy (declared VAT is 10%, not the required 15%) ---
+  seeds.push({
+    reference: "INV-6620",
+    description: "فاتورة مبيعات",
+    amount: money(131500.0),
+    counterparty: "مؤسسة النخبة",
+    account: "4100",
+    postedAt: new Date("2025-09-10T10:00:00Z"),
+    type: "CREDIT",
+    source: "INVOICE",
+    vatOverride: money(13150.0), // 10% instead of the expected 19725.00
+  });
+
   const createdTxns = [];
   for (const s of seeds) {
-    const vat = Math.round(Number.parseFloat(s.amount) * 15) / 100; // 15% VAT
+    // Default VAT is 15% of the taxable base, unless the seed plants a discrepancy.
+    const defaultVat = Math.round(Number.parseFloat(s.amount) * 15) / 100;
+    const vat = s.vatOverride ?? money(defaultVat);
     const txn = await prisma.transaction.create({
       data: {
         auditFirmId: firm.id,
@@ -241,7 +263,7 @@ async function main(): Promise<void> {
         reference: s.reference,
         description: s.description,
         amount: s.amount,
-        vatAmount: money(vat),
+        vatAmount: vat,
         currency: "SAR",
         type: s.type,
         source: s.source,
@@ -256,8 +278,63 @@ async function main(): Promise<void> {
 
   console.log(`   Created ${createdTxns.length} transactions.`);
 
-  console.log("🔗 Creating a reconciliation session...");
-  await prisma.reconciliationSession.create({
+  console.log("🔗 Running the reconciliation engine (Bank vs Ledger)...");
+  // Build a synthetic bank side: mirror the first 8 ledger entries (one with a
+  // small amount delta → PARTIAL) and drop one so a ledger entry stays
+  // UNRECONCILED.
+  const ledgerForRecon = createdTxns
+    .filter((t) => t.source === "LEDGER")
+    .slice(0, 8);
+
+  const bankTxns: ReconcilableTxn[] = [];
+  for (let i = 0; i < ledgerForRecon.length; i += 1) {
+    if (i === 7) continue; // leave the last ledger entry unmatched
+    const src = ledgerForRecon[i]!;
+    // Entry #3 differs by 0.50 → PARTIAL match; the rest are exact.
+    const delta = i === 3 ? 0.5 : 0;
+    const bankAmount = money(Number.parseFloat(src.amount.toString()) + delta);
+    const bankValueDate = new Date(src.valueDate);
+    bankValueDate.setUTCDate(bankValueDate.getUTCDate() + 1); // clears next day
+    const bank = await prisma.transaction.create({
+      data: {
+        auditFirmId: firm.id,
+        engagementId: engagement.id,
+        reference: `BANK-${1000 + i}`,
+        description: "حركة بنكية",
+        amount: bankAmount,
+        currency: "SAR",
+        type: src.type,
+        source: "BANK",
+        counterparty: src.counterparty,
+        postedAt: bankValueDate,
+        valueDate: bankValueDate,
+      },
+    });
+    bankTxns.push({
+      id: bank.id,
+      reference: bank.reference,
+      amount: bank.amount.toString(),
+      counterparty: bank.counterparty,
+      valueDate: bank.valueDate.toISOString(),
+    });
+  }
+
+  const ledgerSide: ReconcilableTxn[] = ledgerForRecon.map((t) => ({
+    id: t.id,
+    reference: t.reference,
+    amount: t.amount.toString(),
+    counterparty: t.counterparty,
+    valueDate: t.valueDate.toISOString(),
+  }));
+
+  const reconResult = reconcile(bankTxns, ledgerSide, {
+    amountToleranceMinor: 100, // allow up to 1.00 SAR delta for PARTIAL
+  });
+  console.log(
+    `   Reconciliation: ${reconResult.matchedCount} matched, ${reconResult.partialCount} partial, ${reconResult.unmatchedTargetIds.length} unmatched ledger.`,
+  );
+
+  const reconSession = await prisma.reconciliationSession.create({
     data: {
       auditFirmId: firm.id,
       engagementId: engagement.id,
@@ -265,12 +342,40 @@ async function main(): Promise<void> {
       status: "COMPLETED",
       sourceA: "BANK",
       sourceB: "LEDGER",
-      matchedCount: 110,
-      totalCount: createdTxns.length,
+      matchedCount: reconResult.matchedCount + reconResult.partialCount,
+      totalCount: reconResult.totalCount,
       startedAt: new Date(),
       completedAt: new Date(),
     },
   });
+
+  for (const m of reconResult.matches) {
+    if (m.targetId === null) continue; // unmatched bank side: no pair row
+    await prisma.reconciliationMatch.create({
+      data: {
+        sessionId: reconSession.id,
+        sourceTxnId: m.sourceId,
+        targetTxnId: m.targetId,
+        status: m.status,
+        confidence: m.confidence.toFixed(4),
+        amountDelta:
+          m.amountDeltaMinor === null
+            ? null
+            : minorUnitsToString(m.amountDeltaMinor),
+      },
+    });
+  }
+
+  // Unmatched LEDGER entries (targets here) → UNRECONCILED anomalies.
+  const ledgerLookup = new Map(ledgerSide.map((t) => [t.id, t]));
+  const reconFindings = reconciliationAnomalies(
+    {
+      ...reconResult,
+      // Report the unmatched ledger side.
+      unmatchedSourceIds: reconResult.unmatchedTargetIds,
+    },
+    (id) => ledgerLookup.get(id),
+  );
 
   console.log("🧮 Running the audit engine...");
   const analyzable: AnalyzableTransaction[] = createdTxns.map((t) => ({
@@ -278,12 +383,14 @@ async function main(): Promise<void> {
     reference: t.reference,
     description: t.description,
     amount: t.amount.toString(),
+    vatAmount: t.vatAmount ? t.vatAmount.toString() : null,
     counterparty: t.counterparty,
     account: t.account,
     postedAt: t.postedAt.toISOString(),
   }));
 
-  const findings = runAuditEngine(analyzable);
+  // Combine statistical findings with the reconciliation (UNRECONCILED) ones.
+  const findings = [...runAuditEngine(analyzable), ...reconFindings];
   console.log(`   Engine produced ${findings.length} findings.`);
 
   for (const f of findings) {

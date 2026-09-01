@@ -8,8 +8,11 @@
 import { analyzeBenford, leadingDigit } from "../benford";
 import { detectDuplicates } from "../duplicates";
 import { detectOffHours, zonedParts } from "../offHours";
+import { checkVat, detectVatDiscrepancies, expectedVatMinor } from "../vat";
 import { toMinorUnits, minorUnitsToString } from "../money";
 import type { AnalyzableTransaction } from "../types";
+import { reconcile } from "../../reconciliation";
+import type { ReconcilableTxn } from "../../reconciliation";
 
 let passed = 0;
 let failed = 0;
@@ -167,6 +170,115 @@ assert(
 
 const parts = zonedParts("2025-09-03T09:00:00Z", "Asia/Riyadh");
 assert(parts.hour === 12 && parts.weekday === 3, "zonedParts resolves Riyadh time");
+
+// ---- VAT ----
+assert(expectedVatMinor(10000, 0.15) === 1500, "expected VAT of 100.00 is 15.00");
+// Half-up rounding: base 33.33 → 4.99950 → 5.00 (500 minor).
+assert(expectedVatMinor(3333, 0.15) === 500, "expected VAT rounds half-up");
+assert(
+  checkVat(10000, 1500).isDiscrepancy === false,
+  "correct 15% VAT is not a discrepancy",
+);
+assert(
+  checkVat(10000, 1500 + 1, { toleranceMinor: 1 }).isDiscrepancy === false,
+  "1-halala delta within tolerance is not a discrepancy",
+);
+assert(
+  checkVat(10000, 1000).isDiscrepancy === true,
+  "10% VAT on a 15% base is a discrepancy",
+);
+
+const vatTxns: AnalyzableTransaction[] = [
+  {
+    id: "ok",
+    reference: "V-OK",
+    description: "x",
+    amount: "1000.00",
+    vatAmount: "150.00",
+    counterparty: null,
+    postedAt: "2025-09-01T09:00:00Z",
+  },
+  {
+    id: "bad",
+    reference: "V-BAD",
+    description: "x",
+    amount: "1000.00",
+    vatAmount: "100.00", // should be 150.00
+    counterparty: null,
+    postedAt: "2025-09-01T09:00:00Z",
+  },
+  {
+    id: "none",
+    reference: "V-NONE",
+    description: "x",
+    amount: "1000.00",
+    vatAmount: null, // not evaluated
+    counterparty: null,
+    postedAt: "2025-09-01T09:00:00Z",
+  },
+];
+const vatFindings = detectVatDiscrepancies(vatTxns);
+assert(
+  vatFindings.length === 1 && vatFindings[0]?.transactionIds[0] === "bad",
+  "flags only the mis-declared VAT transaction",
+);
+
+// ---- reconciliation ----
+const bank: ReconcilableTxn[] = [
+  {
+    id: "b1",
+    reference: "BANK-1",
+    amount: "500.00",
+    counterparty: "ACME",
+    valueDate: "2025-07-02T00:00:00Z",
+  },
+  {
+    id: "b2",
+    reference: "BANK-2",
+    amount: "300.50", // 0.50 off from ledger l2
+    counterparty: "ACME",
+    valueDate: "2025-07-03T00:00:00Z",
+  },
+  {
+    id: "b3",
+    reference: "BANK-3",
+    amount: "999.00", // no ledger counterpart
+    counterparty: "OTHER",
+    valueDate: "2025-07-10T00:00:00Z",
+  },
+];
+const ledger: ReconcilableTxn[] = [
+  {
+    id: "l1",
+    reference: "JV-1",
+    amount: "500.00",
+    counterparty: "ACME",
+    valueDate: "2025-07-01T00:00:00Z",
+  },
+  {
+    id: "l2",
+    reference: "JV-2",
+    amount: "300.00",
+    counterparty: "ACME",
+    valueDate: "2025-07-02T00:00:00Z",
+  },
+];
+const recon = reconcile(bank, ledger, { amountToleranceMinor: 100 });
+assert(recon.matchedCount === 1, "one exact match (b1↔l1)");
+assert(recon.partialCount === 1, "one partial match (b2↔l2, 0.50 delta)");
+assert(
+  recon.unmatchedSourceIds.length === 1 && recon.unmatchedSourceIds[0] === "b3",
+  "b3 is unmatched on the bank side",
+);
+const partial = recon.matches.find((m) => m.status === "PARTIAL");
+assert(partial?.amountDeltaMinor === 50, "partial match records a 50-halala delta");
+
+// Exact-only mode: the partial should no longer match.
+const reconExact = reconcile(bank, ledger, { amountToleranceMinor: 0 });
+assert(
+  reconExact.matchedCount === 1 && reconExact.partialCount === 0,
+  "exact-only mode rejects the 0.50 delta",
+);
 
 // ---- summary ----
 console.log(`\n${passed} passed, ${failed} failed`);
