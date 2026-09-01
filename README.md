@@ -144,8 +144,8 @@ extracted transactions in a single Prisma transaction.
 
 ```bash
 npm install
-docker compose up -d          # local PostgreSQL 16 (or point DATABASE_URL elsewhere)
-cp .env.example .env          # DATABASE_URL already matches docker-compose
+docker compose up -d          # local PostgreSQL 16 on host port 5433 (avoids 5432 clashes)
+cp .env.example .env          # DATABASE_URL already matches docker-compose (localhost:5433)
 npm run prisma:generate
 npm run prisma:migrate        # applies prisma/migrations (initial: _init)
 npm run prisma:seed           # load mock data + generated anomalies
