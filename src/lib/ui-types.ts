@@ -8,7 +8,13 @@ export type AnomalyRuleCode =
   | "WEEKEND_ENTRY"
   | "VAT_DISCREPANCY"
   | "ROUND_AMOUNT"
-  | "UNRECONCILED";
+  | "UNRECONCILED"
+  | "THRESHOLD_AVOIDANCE"
+  | "GAP_SEQUENCE"
+  | "DENYLIST_PARTY"
+  | "MISSING_FIELD"
+  | "BACKDATED_ENTRY"
+  | "CUSTOM_RULE";
 
 export type AnomalySeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 
@@ -155,4 +161,31 @@ export interface AuditLogDTO {
 
 export interface AuditLogResponse {
   logs: AuditLogDTO[];
+}
+
+// ---- Audit rules ----
+
+export type RuleCategory = "NUMERIC" | "PARTY" | "TIMING" | "AGGREGATE";
+export type RuleScope = "FIRM" | "ENGAGEMENT";
+
+export interface RuleDTO {
+  id: string;
+  code: string;
+  nameAr: string;
+  category: RuleCategory;
+  severity: AnomalySeverity;
+  enabled: boolean;
+  scope: RuleScope;
+  descriptionAr: string | null;
+  /** Opaque rule definition (discriminated union), for display/editing. */
+  definition: Record<string, unknown>;
+}
+
+export interface RulesResponse {
+  rules: RuleDTO[];
+}
+
+export interface RunRulesResponse {
+  evaluated: number;
+  findings: number;
 }

@@ -22,6 +22,7 @@ import {
   type ReconcilableTxn,
 } from "../src/lib/reconciliation";
 import { hashPassword } from "../src/lib/auth/password";
+import { PROFESSIONAL_RULES } from "../src/lib/rules/library";
 
 const prisma = new PrismaClient();
 
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
   // Order matters due to FK constraints.
   await prisma.auditLog.deleteMany();
   await prisma.anomalyFlag.deleteMany();
+  await prisma.auditRule.deleteMany();
   await prisma.reconciliationMatch.deleteMany();
   await prisma.reconciliationSession.deleteMany();
   await prisma.transaction.deleteMany();
@@ -100,6 +102,24 @@ async function main(): Promise<void> {
       passwordHash: demoPasswordHash,
     },
   });
+
+  console.log("⚖️  Seeding professional audit-rule library...");
+  for (const r of PROFESSIONAL_RULES) {
+    await prisma.auditRule.create({
+      data: {
+        auditFirmId: firm.id,
+        engagementId: null, // firm-wide
+        code: r.code,
+        name: r.name,
+        nameAr: r.nameAr,
+        category: r.category,
+        severity: r.severity,
+        descriptionAr: r.descriptionAr,
+        definition: r.definition as object,
+      },
+    });
+  }
+  console.log(`   Seeded ${PROFESSIONAL_RULES.length} firm-wide rules.`);
 
   console.log("👤 Creating client company and engagement...");
   const client = await prisma.clientCompany.create({

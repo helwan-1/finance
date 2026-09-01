@@ -86,6 +86,20 @@ enum AnomalyRuleCode {
   VAT_DISCREPANCY // VAT amount mismatch
   ROUND_AMOUNT // suspicious round-number amount
   UNRECONCILED // could not be reconciled
+  THRESHOLD_AVOIDANCE // amount just below an authorization limit (structuring)
+  GAP_SEQUENCE // missing number in a reference sequence
+  DENYLIST_PARTY // counterparty / account on a deny list
+  MISSING_FIELD // required field absent (e.g. no VAT number, no document)
+  BACKDATED_ENTRY // value date precedes posting by too long / future-dated
+  CUSTOM_RULE // produced by a user-defined AuditRule
+}
+
+// Category a user-defined audit rule belongs to (for grouping in the UI).
+enum RuleCategory {
+  NUMERIC // thresholds, comparisons, round amounts, VAT ratio
+  PARTY // counterparty / account allow & deny lists, missing ids
+  TIMING // off-hours, weekend, period, future / backdated
+  AGGREGATE // duplicates, counts, sums, split / structuring
 }
 
 enum AnomalySeverity {
@@ -137,6 +151,7 @@ model AuditFirm {
   reconciliations ReconciliationSession[]
   anomalies      AnomalyFlag[]
   auditLogs      AuditLog[]
+  auditRules     AuditRule[]
 
   @@map("audit_firms")
 }
@@ -205,6 +220,7 @@ model AuditEngagement {
   reconciliations ReconciliationSession[]
   anomalies       AnomalyFlag[]
   auditLogs       AuditLog[]
+  auditRules      AuditRule[]
 
   @@index([auditFirmId])
   @@index([clientCompanyId])
@@ -361,6 +377,9 @@ model AnomalyFlag {
   // Numeric score used for ranking within the feed.
   score        Decimal         @db.Decimal(5, 2)
 
+  // Set when this flag was produced by a user-defined rule (ruleCode CUSTOM_RULE).
+  auditRuleId  String?
+
   detectedAt   DateTime        @default(now())
   resolvedAt   DateTime?
   resolvedById String?
@@ -370,13 +389,49 @@ model AnomalyFlag {
   engagement  AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   transaction Transaction?    @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   resolvedBy  User?           @relation("AnomalyResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  auditRule   AuditRule?      @relation(fields: [auditRuleId], references: [id], onDelete: SetNull)
 
   @@index([auditFirmId])
   @@index([engagementId, status])
   @@index([engagementId, severity])
   @@index([engagementId, ruleCode])
   @@index([engagementId, detectedAt])
+  @@index([auditRuleId])
   @@map("anomaly_flags")
+}
+
+// ----------------------------------------------------------------------------
+// User-defined audit rules (deterministic rules engine)
+// ----------------------------------------------------------------------------
+
+model AuditRule {
+  id           String          @id @default(cuid())
+  auditFirmId  String
+  // Null → a firm-wide rule applied to every engagement; set → engagement-scoped.
+  engagementId String?
+
+  name         String
+  nameAr       String
+  // Short human code shown on findings (e.g. "LIMIT-100K").
+  code         String
+  category     RuleCategory
+  severity     AnomalySeverity @default(MEDIUM)
+  enabled      Boolean         @default(true)
+  descriptionAr String?
+  // Typed rule definition (discriminated union), evaluated by the engine.
+  definition   Json
+
+  createdById  String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  auditFirm    AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement   AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  anomalies    AnomalyFlag[]
+
+  @@index([auditFirmId, enabled])
+  @@index([engagementId])
+  @@map("audit_rules")
 }
 
 // ----------------------------------------------------------------------------

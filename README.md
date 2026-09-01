@@ -79,6 +79,30 @@ to **integer minor units** — never handled as JS floats.
 
 `runAuditEngine()` composes them and returns findings ranked by score/severity.
 
+## Rules engine (`src/lib/rules`) — deterministic, no AI
+
+A configurable rules engine that auditors feed with laws/procedures as **data**;
+it applies them to transactions deterministically, and every finding is fully
+explained by the rule and the values that triggered it (traceable, no LLM at
+runtime).
+
+- **Rule types:** `field_compare` (thresholds / VAT ratio / hour / date-diff),
+  `threshold_avoidance` (structuring below an approval limit), `round_amount`,
+  `value_list` (allow/deny counterparties or accounts), `missing_field`,
+  `time_window` (off-hours / weekend), and `aggregate` (count/sum grouped, with
+  an optional rolling window — duplicates, split payments, account totals).
+- **Scope:** firm-wide rules (apply to every engagement) and engagement-specific
+  rules. Managed on the `/rules` page (enable/disable, add, delete) and run with
+  one button; findings persist as `CUSTOM_RULE` anomaly flags linked to the rule.
+- **Professional starter library** (`library.ts`): 12 standard deterministic
+  audit tests seeded firm-wide — large-item review, authorization-limit
+  avoidance (ISA 240), round amounts, VAT-ratio (ZATCA), off-hours/weekend,
+  future-dated / backdated entries, missing document/counterparty, duplicate
+  and split payments (CAATs).
+- `POST /api/rules/run` evaluates enabled rules over the engagement's
+  transactions, writes an `EXPORT`-style `RUN_ANALYSIS` audit entry, and
+  broadcasts a live SSE event. Verified end-to-end: 12 rules → 32 findings.
+
 ## Reconciliation engine (`src/lib/reconciliation`)
 
 `reconcile(sourceTxns, targetTxns, options)` matches two sources (e.g. Bank vs
