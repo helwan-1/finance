@@ -149,11 +149,16 @@ matches, and 7 anomaly flags across the seeded engagement.
 The dashboard renders even **without** a database: the anomalies API falls back
 to an in-memory demo dataset (`src/lib/demo-data.ts`).
 
-### Run the engine tests
+### Tests
 
 ```bash
-npx tsx src/lib/audit/__tests__/engine.test.ts
+npm test          # Vitest: engine + auth + API route integration tests
+npm run test:watch
 ```
+
+Coverage: the algorithms engine (Benford / duplicates / off-hours / VAT /
+reconciliation), the auth layer (bcrypt, RBAC matrix, JWT session round-trip and
+tamper rejection), and the API routes' demo paths (filters + the .xlsx export).
 
 ## Notes on AI / document processing
 
