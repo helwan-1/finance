@@ -36,3 +36,25 @@ body {
     border-color: rgb(var(--border));
   }
 }
+
+/* Print / "Export PDF": a clean, light report of the anomalies feed. */
+@media print {
+  :root {
+    --background: 255 255 255;
+    --foreground: 15 23 42;
+    --card: 255 255 255;
+    --border: 203 213 225;
+    --muted: 71 85 105;
+  }
+  body {
+    background: #fff;
+  }
+  main {
+    padding: 0 !important;
+  }
+  /* Keep each anomaly card intact across page breaks. */
+  article {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}

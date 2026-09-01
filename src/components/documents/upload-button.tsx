@@ -18,17 +18,11 @@ async function uploadDocument(input: {
   file: File;
   type: DocumentType;
 }): Promise<DocumentDTO> {
-  const res = await fetch("/api/documents", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      engagementId: input.engagementId,
-      fileName: input.file.name,
-      mimeType: input.file.type,
-      sizeBytes: input.file.size,
-      type: input.type,
-    }),
-  });
+  const form = new FormData();
+  form.set("file", input.file);
+  form.set("engagementId", input.engagementId);
+  form.set("type", input.type);
+  const res = await fetch("/api/documents", { method: "POST", body: form });
   if (!res.ok) throw new Error("فشل رفع المستند");
   const data = (await res.json()) as { document: DocumentDTO };
   return data.document;

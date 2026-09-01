@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DEMO_RECON_SESSIONS } from "@/lib/demo-reconciliation";
+import { authorize } from "@/lib/auth/guard";
 import type {
   ReconMatchDTO,
   ReconSessionDTO,
@@ -17,6 +18,9 @@ import type {
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
+
+  const authz = await authorize("reconciliation:view", engagementId);
+  if (!authz.ok) return authz.response;
 
   try {
     if (!engagementId) {

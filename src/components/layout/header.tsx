@@ -3,12 +3,13 @@
 import { Menu, Bell, Search } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import { EngagementSwitcher } from "./engagement-switcher";
+import { UserMenu } from "@/components/auth/user-menu";
 
 export function Header() {
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
   return (
-    <header className="surface sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b px-4 md:px-6">
+    <header className="surface sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b px-4 md:px-6 print:hidden">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -38,12 +39,7 @@ export function Header() {
           <Bell className="h-5 w-5" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-severity-critical" />
         </button>
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white"
-          title="سارة الحربي"
-        >
-          س
-        </div>
+        <UserMenu />
       </div>
     </header>
   );

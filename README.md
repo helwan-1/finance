@@ -98,24 +98,53 @@ extract-transactions flow works end to end. `POST /api/documents` registers an
 uploaded file, runs the parser, and (with a DB) persists the document plus the
 extracted transactions in a single Prisma transaction.
 
+## Authentication & RBAC (`src/lib/auth`)
+
+- **Sessions:** signed JWT (HS256 via `jose`) in an httpOnly cookie; passwords
+  hashed with bcrypt. `POST /api/auth/login`, `POST /api/auth/logout`,
+  `GET /api/auth/me`. Sign with `AUTH_SECRET`.
+- **RBAC:** a permission matrix per `UserRole` (`rbac.ts`); `authorize()`
+  (`guard.ts`) enforces, in order, authentication → role permission → **tenant
+  isolation** (an authenticated user may only touch engagements in their own
+  firm). Applied to every data route.
+- **Demo vs. enforced:** with `AUTH_REQUIRED=false` (default) the public demo
+  renders with in-memory data and no login. Set `AUTH_REQUIRED=true` to require
+  a session on all API routes (verified end-to-end: unauth → 401, valid login →
+  200, cross-tenant → 403).
+- Seed users (password `Audit@1234`): `partner@almeezan.sa` (PARTNER),
+  `senior@almeezan.sa` (SENIOR).
+
+## Report export
+
+- **Excel:** `GET /api/anomalies/export` streams a real `.xlsx` (via `exceljs`,
+  RTL sheet) of the filtered anomalies feed; requires the `data:export`
+  permission and records an immutable `EXPORT_DATA` audit-log entry.
+- **PDF:** a print-optimized report (`window.print()` + `@media print` rules)
+  that hides the app chrome and renders the anomalies as a clean, RTL document.
+
 ## Multi-tenancy & audit trail
 
 - Every tenant-owned row carries `auditFirmId`; engagement-scoped rows also
   carry `engagementId`. **Every query filters by both** — see
-  `src/app/api/anomalies/route.ts`.
-- `recordAuditLog()` appends immutable entries for user actions (viewing files,
-  resolving anomalies, exporting data).
+  `src/app/api/anomalies/route.ts` and `authorize()` in `src/lib/auth/guard.ts`.
+- `recordAuditLog()` appends immutable entries for user actions (login, viewing
+  files, resolving anomalies, exporting data).
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env          # set DATABASE_URL to your PostgreSQL instance
+docker compose up -d          # local PostgreSQL 16 (or point DATABASE_URL elsewhere)
+cp .env.example .env          # DATABASE_URL already matches docker-compose
 npm run prisma:generate
-npm run prisma:migrate        # create the schema
+npm run prisma:migrate        # applies prisma/migrations (initial: _init)
 npm run prisma:seed           # load mock data + generated anomalies
 npm run dev                   # http://localhost:3000
 ```
+
+The committed initial migration (`prisma/migrations/*_init`) has been applied and
+seeded against a real PostgreSQL 16 instance: 134 transactions, 7 reconciliation
+matches, and 7 anomaly flags across the seeded engagement.
 
 The dashboard renders even **without** a database: the anomalies API falls back
 to an in-memory demo dataset (`src/lib/demo-data.ts`).

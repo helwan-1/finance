@@ -142,13 +142,15 @@ model AuditFirm {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  auditFirmId String
-  email       String
-  fullName    String
-  fullNameAr  String
-  role        UserRole @default(STAFF)
-  isActive    Boolean  @default(true)
+  id           String   @id @default(cuid())
+  auditFirmId  String
+  email        String
+  fullName     String
+  fullNameAr   String
+  role         UserRole @default(STAFF)
+  isActive     Boolean  @default(true)
+  // bcrypt hash; never returned to the client.
+  passwordHash String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

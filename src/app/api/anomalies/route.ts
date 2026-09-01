@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DEMO_ANOMALIES } from "@/lib/demo-data";
 import { filterAnomalies, parseFilters } from "@/lib/filter-anomalies";
+import { authorize } from "@/lib/auth/guard";
 import type { AnomaliesResponse, AnomalyDTO } from "@/lib/ui-types";
 
 /**
@@ -21,6 +22,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const filters = parseFilters(searchParams);
   const engagementId = searchParams.get("engagementId");
+
+  const authz = await authorize("anomalies:view", engagementId);
+  if (!authz.ok) return authz.response;
 
   try {
     if (!engagementId) {

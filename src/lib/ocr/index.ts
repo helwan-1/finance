@@ -3,45 +3,20 @@
  *
  * This is the seam where PaddleOCR / AWS Textract / the Claude API plug in. The
  * app depends only on the `DocumentParser` interface, so a real provider can be
- * swapped in without touching the routes or UI. Until one is configured we use
- * a deterministic stub so the upload → parse flow works end to end.
+ * swapped in without touching the routes or UI. Without credentials we use a
+ * deterministic stub so the upload → parse flow works end to end.
  */
 
-import type { DocumentType } from "../ui-types";
+import { ClaudeDocumentParser } from "./claude-parser";
+import type {
+  DocumentParser,
+  ExtractedLine,
+  ParseInput,
+  ParsedDocument,
+} from "./types";
 
-/** A single line item extracted from a document. */
-export interface ExtractedLine {
-  reference: string;
-  description: string;
-  /** Decimal string. */
-  amount: string;
-  /** Decimal string, when a tax line is present. */
-  vatAmount?: string;
-  date?: string;
-  counterparty?: string;
-}
-
-export interface ParsedDocument {
-  /** Provider that produced the result (e.g. "stub", "textract", "claude"). */
-  provider: string;
-  documentType: DocumentType;
-  pageCount: number;
-  lines: ExtractedLine[];
-  /** Free-form provider metadata (confidence scores, raw blocks, etc.). */
-  raw?: Record<string, unknown>;
-}
-
-export interface ParseInput {
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  documentType: DocumentType;
-}
-
-export interface DocumentParser {
-  readonly name: string;
-  parse(input: ParseInput): Promise<ParsedDocument>;
-}
+export type { DocumentParser, ExtractedLine, ParseInput, ParsedDocument };
+export { ClaudeDocumentParser } from "./claude-parser";
 
 /** Deterministic pseudo-random generator seeded from a string. */
 function seededRandom(seed: string): () => number {
@@ -93,12 +68,15 @@ export class StubDocumentParser implements DocumentParser {
 }
 
 /**
- * Resolve the active parser. When OCR_SERVICE_URL / ANTHROPIC_API_KEY are set a
- * real provider would be returned here; for now we always return the stub.
+ * Resolve the active parser based on the environment:
+ *   * ANTHROPIC_API_KEY set → the Claude vision/document parser.
+ *   * otherwise → the deterministic stub (keeps the flow working offline).
+ *
+ * The Textract seam (OCR_SERVICE_URL) can be added the same way.
  */
 export function getParser(): DocumentParser {
-  // Placeholder for provider selection:
-  //   if (process.env.OCR_SERVICE_URL) return new TextractParser(...)
-  //   if (process.env.ANTHROPIC_API_KEY) return new ClaudeParser(...)
+  if (process.env.ANTHROPIC_API_KEY) {
+    return new ClaudeDocumentParser();
+  }
   return new StubDocumentParser();
 }

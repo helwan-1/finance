@@ -21,6 +21,7 @@ import {
   reconciliationAnomalies,
   type ReconcilableTxn,
 } from "../src/lib/reconciliation";
+import { hashPassword } from "../src/lib/auth/password";
 
 const prisma = new PrismaClient();
 
@@ -75,6 +76,9 @@ async function main(): Promise<void> {
     },
   });
 
+  // Demo password for both seeded users (change in any real deployment).
+  const demoPasswordHash = await hashPassword("Audit@1234");
+
   const partner = await prisma.user.create({
     data: {
       auditFirmId: firm.id,
@@ -82,6 +86,7 @@ async function main(): Promise<void> {
       fullName: "Khalid Al-Otaibi",
       fullNameAr: "خالد العتيبي",
       role: "PARTNER",
+      passwordHash: demoPasswordHash,
     },
   });
 
@@ -92,6 +97,7 @@ async function main(): Promise<void> {
       fullName: "Sara Al-Harbi",
       fullNameAr: "سارة الحربي",
       role: "SENIOR",
+      passwordHash: demoPasswordHash,
     },
   });
 
