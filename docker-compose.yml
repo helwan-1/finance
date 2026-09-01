@@ -3,6 +3,10 @@
 #   docker compose up -d
 #   cp .env.example .env   # DATABASE_URL already matches these credentials
 #   npm run prisma:migrate && npm run prisma:seed
+#
+# The host port is 5433 (not the default 5432) to avoid clashing with any other
+# local PostgreSQL / project already using 5432. Change the left-hand number if
+# 5433 is also taken, and update DATABASE_URL in .env to match.
 services:
   db:
     image: postgres:16-alpine
@@ -13,7 +17,8 @@ services:
       POSTGRES_PASSWORD: audit
       POSTGRES_DB: audit_dashboard
     ports:
-      - "5432:5432"
+      # host:container — the container still listens on 5432 internally.
+      - "5433:5432"
     volumes:
       - audit_pgdata:/var/lib/postgresql/data
     healthcheck:
