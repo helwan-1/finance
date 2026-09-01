@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeBenford, CHI_SQUARE_CRITICAL_8DF } from "@/lib/audit/benford";
 import { DEMO_ANALYTICS } from "@/lib/demo-analytics";
+import { authorize } from "@/lib/auth/guard";
 import type { AnalyticsResponse } from "@/lib/ui-types";
 
 /**
@@ -12,6 +13,9 @@ import type { AnalyticsResponse } from "@/lib/ui-types";
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
+
+  const authz = await authorize("analytics:view", engagementId);
+  if (!authz.ok) return authz.response;
 
   try {
     if (!engagementId) {

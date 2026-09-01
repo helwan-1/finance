@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DEMO_DOCUMENTS } from "@/lib/demo-documents";
 import { getParser } from "@/lib/ocr";
+import { authorize } from "@/lib/auth/guard";
 import type {
   DocumentDTO,
   DocumentType,
@@ -23,6 +24,9 @@ const VALID_TYPES: DocumentType[] = [
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
+
+  const authz = await authorize("documents:view", engagementId);
+  if (!authz.ok) return authz.response;
 
   try {
     if (!engagementId) {
@@ -66,42 +70,45 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-interface UploadBody {
-  engagementId?: string;
-  fileName?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  type?: DocumentType;
-}
-
 /**
  * POST /api/documents — register an uploaded document and run the OCR parser.
  *
- * The file bytes would be streamed to object storage in production; here we
- * accept metadata and run the (stub) parser so the upload → parse → extract
- * flow is exercised end to end. Persists when a database is available;
- * otherwise returns a synthesized parsed document.
+ * Accepts multipart/form-data with `file`, `engagementId`, and `type`. The file
+ * bytes are handed to the active parser (Claude when configured, else the stub)
+ * and, when a database is available, the document plus its extracted
+ * transactions are persisted in a single Prisma transaction. In production the
+ * bytes would additionally be streamed to object storage.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  let body: UploadBody;
+  let form: FormData;
   try {
-    body = (await request.json()) as UploadBody;
+    form = await request.formData();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Expected multipart/form-data" },
+      { status: 400 },
+    );
   }
 
-  const fileName = body.fileName?.trim();
-  const mimeType = body.mimeType?.trim() || "application/octet-stream";
-  const sizeBytes =
-    typeof body.sizeBytes === "number" && body.sizeBytes >= 0
-      ? Math.floor(body.sizeBytes)
-      : 0;
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "file is required" }, { status: 400 });
+  }
+
+  const engagementId = (form.get("engagementId") as string | null)?.trim() || null;
+  const rawType = (form.get("type") as string | null)?.trim();
   const type: DocumentType =
-    body.type && VALID_TYPES.includes(body.type) ? body.type : "OTHER";
+    rawType && VALID_TYPES.includes(rawType as DocumentType)
+      ? (rawType as DocumentType)
+      : "OTHER";
 
-  if (!fileName) {
-    return NextResponse.json({ error: "fileName is required" }, { status: 400 });
-  }
+  const authz = await authorize("documents:upload", engagementId);
+  if (!authz.ok) return authz.response;
+
+  const fileName = file.name;
+  const mimeType = file.type || "application/octet-stream";
+  const sizeBytes = file.size;
+  const contentBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
 
   const parser = getParser();
   const parsed = await parser.parse({
@@ -109,12 +116,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     mimeType,
     sizeBytes,
     documentType: type,
+    contentBase64,
   });
 
   try {
-    const engagement = body.engagementId
+    const engagement = engagementId
       ? await prisma.auditEngagement.findUnique({
-          where: { id: body.engagementId },
+          where: { id: engagementId },
           select: { id: true, auditFirmId: true },
         })
       : null;

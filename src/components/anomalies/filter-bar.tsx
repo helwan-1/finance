@@ -42,7 +42,7 @@ export function FilterBar() {
   const resetFilters = useUIStore((s) => s.resetFilters);
 
   return (
-    <div className="surface flex flex-wrap items-end gap-3 rounded-xl border p-4">
+    <div className="surface flex flex-wrap items-end gap-3 rounded-xl border p-4 print:hidden">
       <div className="flex min-w-[220px] flex-1 flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-search">
           بحث

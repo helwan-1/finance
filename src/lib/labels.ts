@@ -57,6 +57,15 @@ export const MATCH_STATUS_BADGE: Record<ReconMatchStatus, string> = {
   UNMATCHED: "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
 };
 
+export const ROLE_LABELS_AR: Record<string, string> = {
+  ADMIN: "مدير النظام",
+  PARTNER: "شريك",
+  MANAGER: "مدير مهمة",
+  SENIOR: "مدقق أول",
+  STAFF: "مدقق",
+  REVIEWER: "مراجع",
+};
+
 export const DOCUMENT_TYPE_LABELS_AR: Record<DocumentType, string> = {
   INVOICE: "فاتورة",
   BANK_STATEMENT: "كشف حساب بنكي",

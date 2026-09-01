@@ -1,0 +1,26 @@
+# Local PostgreSQL for development.
+# Usage:
+#   docker compose up -d
+#   cp .env.example .env   # DATABASE_URL already matches these credentials
+#   npm run prisma:migrate && npm run prisma:seed
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: audit_dashboard_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit
+      POSTGRES_DB: audit_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - audit_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit -d audit_dashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  audit_pgdata:

@@ -38,7 +38,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`surface hidden shrink-0 border-l transition-[width] duration-200 md:flex md:flex-col ${
+      className={`surface hidden shrink-0 border-l transition-[width] duration-200 md:flex md:flex-col print:!hidden ${
         sidebarOpen ? "md:w-64" : "md:w-20"
       }`}
       aria-label="التنقل الرئيسي"

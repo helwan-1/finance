@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DEMO_AUDIT_LOGS } from "@/lib/demo-audit-log";
+import { authorize } from "@/lib/auth/guard";
 import type { AuditLogDTO, AuditLogResponse } from "@/lib/ui-types";
 
 /**
@@ -12,6 +13,9 @@ import type { AuditLogDTO, AuditLogResponse } from "@/lib/ui-types";
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
+
+  const authz = await authorize("auditlog:view", engagementId);
+  if (!authz.ok) return authz.response;
 
   try {
     if (!engagementId) {
