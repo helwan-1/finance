@@ -4,6 +4,7 @@ import { Menu, Bell, Search } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import { EngagementSwitcher } from "./engagement-switcher";
 import { UserMenu } from "@/components/auth/user-menu";
+import { LiveIndicator } from "./live-indicator";
 
 export function Header() {
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -23,6 +24,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <LiveIndicator />
         <div className="relative hidden sm:block">
           <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--muted))]" />
           <input

@@ -20,6 +20,7 @@ import {
   STATUS_LABELS_AR,
 } from "@/lib/labels";
 import { formatCurrency, formatRelative } from "@/lib/format";
+import { ResolutionActions } from "./resolution-actions";
 
 const RULE_ICON: Record<AnomalyRuleCode, LucideIcon> = {
   BENFORD_DEVIATION: TrendingUp,
@@ -94,6 +95,8 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
           )}
           <span>{formatRelative(anomaly.detectedAt)}</span>
         </div>
+
+        <ResolutionActions anomaly={anomaly} />
       </div>
 
       <div className="hidden shrink-0 flex-col items-center justify-center sm:flex">

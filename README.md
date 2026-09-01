@@ -114,6 +114,16 @@ extracted transactions in a single Prisma transaction.
 - Seed users (password `Audit@1234`): `partner@almeezan.sa` (PARTNER),
   `senior@almeezan.sa` (SENIOR).
 
+## Live updates (SSE)
+
+- `GET /api/stream?engagementId=...` is a Server-Sent Events channel. Resolving
+  an anomaly or uploading a document publishes an event on an in-process bus
+  (`src/lib/events.ts`); every connected dashboard receives it and refetches, so
+  changes made by one user appear in other tabs/users in real time.
+- The header shows a **مباشر / live** indicator; `useLiveUpdates()` manages the
+  `EventSource` and query invalidation. The in-process bus is the seam for Redis
+  pub/sub in a multi-instance deployment.
+
 ## Report export
 
 - **Excel:** `GET /api/anomalies/export` streams a real `.xlsx` (via `exceljs`,
@@ -149,11 +159,16 @@ matches, and 7 anomaly flags across the seeded engagement.
 The dashboard renders even **without** a database: the anomalies API falls back
 to an in-memory demo dataset (`src/lib/demo-data.ts`).
 
-### Run the engine tests
+### Tests
 
 ```bash
-npx tsx src/lib/audit/__tests__/engine.test.ts
+npm test          # Vitest: engine + auth + API route integration tests
+npm run test:watch
 ```
+
+Coverage: the algorithms engine (Benford / duplicates / off-hours / VAT /
+reconciliation), the auth layer (bcrypt, RBAC matrix, JWT session round-trip and
+tamper rejection), and the API routes' demo paths (filters + the .xlsx export).
 
 ## Notes on AI / document processing
 
