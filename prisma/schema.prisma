@@ -1,0 +1,408 @@
+// Financial Audit Dashboard — Prisma schema
+// -----------------------------------------------------------------------------
+// Design principles:
+//   * Absolute multi-tenant isolation. Every tenant-owned row carries
+//     auditFirmId, and engagement-scoped rows also carry engagementId.
+//     Application queries MUST always filter by these.
+//   * Financial precision: ALL monetary amounts use @db.Decimal(15, 2).
+//     Never handled as JS floats in calculations.
+//   * Immutable audit trail via the AuditLog model.
+// -----------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN // audit firm administrator
+  PARTNER // engagement partner (sign-off authority)
+  MANAGER // engagement manager
+  SENIOR // senior auditor
+  STAFF // staff auditor
+  REVIEWER // read-only reviewer
+}
+
+enum DocumentType {
+  INVOICE
+  BANK_STATEMENT
+  VAT_RETURN
+  GENERAL_LEDGER
+  PURCHASE_ORDER
+  RECEIPT
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING // OCR / parsing in progress
+  PARSED
+  FAILED
+  ARCHIVED
+}
+
+enum TransactionType {
+  DEBIT
+  CREDIT
+}
+
+enum TransactionSource {
+  LEDGER
+  BANK
+  INVOICE
+  MANUAL
+}
+
+enum ReconciliationStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum MatchStatus {
+  MATCHED
+  PARTIAL
+  UNMATCHED
+  DISPUTED
+}
+
+// Rule codes for anomaly detection. Kept as an enum so the FilterBar can
+// present a stable, translatable set of rule categories.
+enum AnomalyRuleCode {
+  BENFORD_DEVIATION // Benford's Law first-digit deviation
+  DUPLICATE_EXACT // exact duplicate transaction
+  DUPLICATE_NEAR // near-duplicate within time window
+  OFF_HOURS_ENTRY // entry posted outside business hours
+  WEEKEND_ENTRY // entry posted on weekend
+  VAT_DISCREPANCY // VAT amount mismatch
+  ROUND_AMOUNT // suspicious round-number amount
+  UNRECONCILED // could not be reconciled
+}
+
+enum AnomalySeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum AnomalyStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED // false positive
+  ESCALATED
+}
+
+enum AuditAction {
+  VIEW_DOCUMENT
+  DOWNLOAD_DOCUMENT
+  RESOLVE_ANOMALY
+  DISMISS_ANOMALY
+  ESCALATE_ANOMALY
+  EXPORT_DATA
+  RUN_RECONCILIATION
+  RUN_ANALYSIS
+  LOGIN
+  LOGOUT
+}
+
+// ----------------------------------------------------------------------------
+// Tenancy root
+// ----------------------------------------------------------------------------
+
+model AuditFirm {
+  id           String   @id @default(cuid())
+  name         String
+  nameAr       String // Arabic display name
+  licenseNo    String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users          User[]
+  clientCompanies ClientCompany[]
+  engagements    AuditEngagement[]
+  documents      Document[]
+  transactions   Transaction[]
+  reconciliations ReconciliationSession[]
+  anomalies      AnomalyFlag[]
+  auditLogs      AuditLog[]
+
+  @@map("audit_firms")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  auditFirmId String
+  email       String
+  fullName    String
+  fullNameAr  String
+  role        UserRole @default(STAFF)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  auditFirm          AuditFirm            @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  resolvedAnomalies  AnomalyFlag[]        @relation("AnomalyResolver")
+  auditLogs          AuditLog[]
+  engagementMembers  EngagementMember[]
+
+  // Email is unique within a firm, not globally.
+  @@unique([auditFirmId, email])
+  @@index([auditFirmId])
+  @@map("users")
+}
+
+model ClientCompany {
+  id          String   @id @default(cuid())
+  auditFirmId String
+  name        String
+  nameAr      String
+  vatNumber   String? // 15-digit ZATCA VAT registration number
+  crNumber    String? // commercial registration number
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  auditFirm   AuditFirm         @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagements AuditEngagement[]
+
+  @@unique([auditFirmId, vatNumber])
+  @@index([auditFirmId])
+  @@map("client_companies")
+}
+
+model AuditEngagement {
+  id              String   @id @default(cuid())
+  auditFirmId     String
+  clientCompanyId String
+  title           String
+  titleAr         String
+  fiscalYear      Int
+  periodStart     DateTime
+  periodEnd       DateTime
+  currency        String   @default("SAR")
+  isClosed        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  auditFirm       AuditFirm               @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  clientCompany   ClientCompany           @relation(fields: [clientCompanyId], references: [id], onDelete: Cascade)
+  members         EngagementMember[]
+  documents       Document[]
+  transactions    Transaction[]
+  reconciliations ReconciliationSession[]
+  anomalies       AnomalyFlag[]
+  auditLogs       AuditLog[]
+
+  @@index([auditFirmId])
+  @@index([clientCompanyId])
+  @@map("audit_engagements")
+}
+
+// Join model: which users are assigned to which engagement.
+model EngagementMember {
+  id           String   @id @default(cuid())
+  engagementId String
+  userId       String
+  assignedAt   DateTime @default(now())
+
+  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, userId])
+  @@index([userId])
+  @@map("engagement_members")
+}
+
+// ----------------------------------------------------------------------------
+// Documents & transactions
+// ----------------------------------------------------------------------------
+
+model Document {
+  id           String         @id @default(cuid())
+  auditFirmId  String
+  engagementId String
+  type         DocumentType
+  status       DocumentStatus @default(UPLOADED)
+  fileName     String
+  storageKey   String // object-storage key (S3/GCS)
+  mimeType     String
+  sizeBytes    Int
+  pageCount    Int?
+  // Raw structured output from OCR/parsing (Textract/PaddleOCR/Claude).
+  parsedData   Json?
+  uploadedAt   DateTime       @default(now())
+  parsedAt     DateTime?
+
+  auditFirm    AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement   AuditEngagement  @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([auditFirmId])
+  @@index([engagementId, status])
+  @@map("documents")
+}
+
+model Transaction {
+  id           String            @id @default(cuid())
+  auditFirmId  String
+  engagementId String
+  documentId   String?
+
+  reference    String // voucher / invoice / statement line reference
+  description  String
+  // MONETARY AMOUNTS — always Decimal(15, 2). Never JS float.
+  amount       Decimal           @db.Decimal(15, 2)
+  vatAmount    Decimal?          @db.Decimal(15, 2)
+  currency     String            @default("SAR")
+  type         TransactionType
+  source       TransactionSource
+
+  counterparty String?
+  account      String? // GL account code
+  // postedAt is when it was recorded in the system (used for off-hours checks).
+  postedAt     DateTime
+  // valueDate is the accounting/value date.
+  valueDate    DateTime
+  createdAt    DateTime          @default(now())
+
+  auditFirm  AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  document   Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  matchesAsSource ReconciliationMatch[] @relation("MatchSource")
+  matchesAsTarget ReconciliationMatch[] @relation("MatchTarget")
+  anomalies       AnomalyFlag[]
+
+  @@index([auditFirmId])
+  @@index([engagementId, postedAt])
+  @@index([engagementId, source])
+  @@map("transactions")
+}
+
+// ----------------------------------------------------------------------------
+// Reconciliation
+// ----------------------------------------------------------------------------
+
+model ReconciliationSession {
+  id           String               @id @default(cuid())
+  auditFirmId  String
+  engagementId String
+  name         String
+  status       ReconciliationStatus @default(DRAFT)
+  // Sources being reconciled, e.g. "BANK" vs "LEDGER".
+  sourceA      TransactionSource
+  sourceB      TransactionSource
+  matchedCount Int                  @default(0)
+  totalCount   Int                  @default(0)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime             @default(now())
+
+  auditFirm  AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  matches    ReconciliationMatch[]
+
+  @@index([auditFirmId])
+  @@index([engagementId, status])
+  @@map("reconciliation_sessions")
+}
+
+model ReconciliationMatch {
+  id             String      @id @default(cuid())
+  sessionId      String
+  sourceTxnId    String
+  targetTxnId    String?
+  status         MatchStatus @default(UNMATCHED)
+  // Confidence score 0.00 - 1.00 for fuzzy matches.
+  confidence     Decimal     @db.Decimal(5, 4)
+  amountDelta    Decimal?    @db.Decimal(15, 2)
+  createdAt      DateTime    @default(now())
+
+  session   ReconciliationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sourceTxn Transaction           @relation("MatchSource", fields: [sourceTxnId], references: [id], onDelete: Cascade)
+  targetTxn Transaction?          @relation("MatchTarget", fields: [targetTxnId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, status])
+  @@map("reconciliation_matches")
+}
+
+// ----------------------------------------------------------------------------
+// Anomalies
+// ----------------------------------------------------------------------------
+
+model AnomalyFlag {
+  id           String          @id @default(cuid())
+  auditFirmId  String
+  engagementId String
+  transactionId String?
+
+  ruleCode     AnomalyRuleCode
+  severity     AnomalySeverity
+  status       AnomalyStatus   @default(OPEN)
+  title        String
+  titleAr      String
+  description  String
+  descriptionAr String
+  // Structured evidence for the flag (e.g. Benford stats, matched pair ids).
+  evidence     Json?
+  // Numeric score used for ranking within the feed.
+  score        Decimal         @db.Decimal(5, 2)
+
+  detectedAt   DateTime        @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolutionNote String?
+
+  auditFirm   AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement  AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  transaction Transaction?    @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  resolvedBy  User?           @relation("AnomalyResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([auditFirmId])
+  @@index([engagementId, status])
+  @@index([engagementId, severity])
+  @@index([engagementId, ruleCode])
+  @@index([engagementId, detectedAt])
+  @@map("anomaly_flags")
+}
+
+// ----------------------------------------------------------------------------
+// Immutable audit trail
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  auditFirmId  String
+  engagementId String?
+  userId       String
+
+  action       AuditAction
+  // Type + id of the affected entity (e.g. "AnomalyFlag", "<id>").
+  entityType   String
+  entityId     String?
+  // Arbitrary context (old/new values, filters used on export, etc.).
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime    @default(now())
+
+  auditFirm  AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([auditFirmId, createdAt])
+  @@index([engagementId, createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}

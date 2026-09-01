@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 248 250 252; /* slate-50 */
+  --foreground: 15 23 42; /* slate-900 */
+  --card: 255 255 255;
+  --border: 226 232 240; /* slate-200 */
+  --muted: 100 116 139; /* slate-500 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 2 6 23; /* slate-950 */
+    --foreground: 226 232 240;
+    --card: 15 23 42; /* slate-900 */
+    --border: 30 41 59; /* slate-800 */
+    --muted: 148 163 184;
+  }
+}
+
+body {
+  background-color: rgb(var(--background));
+  color: rgb(var(--foreground));
+}
+
+/* RTL-friendly scrollbars and focus rings. */
+* {
+  scrollbar-width: thin;
+}
+
+@layer components {
+  .surface {
+    background-color: rgb(var(--card));
+    border-color: rgb(var(--border));
+  }
+}
