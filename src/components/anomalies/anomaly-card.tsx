@@ -9,6 +9,11 @@ import {
   Receipt,
   CircleDollarSign,
   Unlink,
+  Gauge,
+  UserX,
+  FileWarning,
+  CalendarClock,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import type { AnomalyDTO, AnomalyRuleCode } from "@/lib/ui-types";
@@ -31,10 +36,18 @@ const RULE_ICON: Record<AnomalyRuleCode, LucideIcon> = {
   VAT_DISCREPANCY: Receipt,
   ROUND_AMOUNT: CircleDollarSign,
   UNRECONCILED: Unlink,
+  THRESHOLD_AVOIDANCE: Gauge,
+  GAP_SEQUENCE: SlidersHorizontal,
+  DENYLIST_PARTY: UserX,
+  MISSING_FIELD: FileWarning,
+  BACKDATED_ENTRY: CalendarClock,
+  CUSTOM_RULE: SlidersHorizontal,
 };
 
+const DEFAULT_ICON: LucideIcon = SlidersHorizontal;
+
 export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
-  const Icon = RULE_ICON[anomaly.ruleCode];
+  const Icon = RULE_ICON[anomaly.ruleCode] ?? DEFAULT_ICON;
 
   return (
     <article className="surface relative flex gap-4 overflow-hidden rounded-xl border p-4 shadow-card">

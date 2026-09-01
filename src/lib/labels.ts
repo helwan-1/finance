@@ -34,6 +34,12 @@ export const RULE_LABELS_AR: Record<AnomalyRuleCode, string> = {
   VAT_DISCREPANCY: "فرق ضريبة القيمة المضافة",
   ROUND_AMOUNT: "مبلغ مُدوَّر",
   UNRECONCILED: "غير مطابَق",
+  THRESHOLD_AVOIDANCE: "التفاف على حد الاعتماد",
+  GAP_SEQUENCE: "فجوة في التسلسل",
+  DENYLIST_PARTY: "طرف محظور",
+  MISSING_FIELD: "حقل مفقود",
+  BACKDATED_ENTRY: "قيد بأثر رجعي",
+  CUSTOM_RULE: "قاعدة مخصّصة",
 };
 
 /** Tailwind classes for severity badges. */
@@ -55,6 +61,13 @@ export const MATCH_STATUS_BADGE: Record<ReconMatchStatus, string> = {
   MATCHED: "bg-severity-low/10 text-severity-low ring-severity-low/30",
   PARTIAL: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
   UNMATCHED: "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
+};
+
+export const RULE_CATEGORY_LABELS_AR: Record<string, string> = {
+  NUMERIC: "حدود ومقارنات رقمية",
+  PARTY: "أطراف وبيانات",
+  TIMING: "توقيت وتواريخ",
+  AGGREGATE: "تجميع وتكرار",
 };
 
 export const ROLE_LABELS_AR: Record<string, string> = {

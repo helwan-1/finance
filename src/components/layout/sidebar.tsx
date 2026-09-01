@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
+  Scale,
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { labelAr: "لوحة التحكم", icon: LayoutDashboard, href: "/" },
   { labelAr: "المستندات", icon: FileText, href: "/documents" },
   { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
+  { labelAr: "قواعد التدقيق", icon: Scale, href: "/rules" },
   { labelAr: "الحالات الشاذة", icon: ShieldAlert },
   { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
   { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
