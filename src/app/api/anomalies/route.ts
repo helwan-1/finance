@@ -43,10 +43,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     if (!engagement) {
-      return NextResponse.json(
-        { error: "Engagement not found" },
-        { status: 404 },
-      );
+      // Unknown engagement id (e.g. the demo id): serve the demo feed,
+      // consistent with the other data routes.
+      const anomalies = filterAnomalies(DEMO_ANOMALIES, filters);
+      return NextResponse.json<AnomaliesResponse>({
+        anomalies,
+        total: anomalies.length,
+      });
     }
 
     const where: Prisma.AnomalyFlagWhereInput = {
