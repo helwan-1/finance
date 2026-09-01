@@ -24,11 +24,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { labelAr: "لوحة التحكم", icon: LayoutDashboard, href: "/" },
-  { labelAr: "المستندات", icon: FileText },
+  { labelAr: "المستندات", icon: FileText, href: "/documents" },
   { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
   { labelAr: "الحالات الشاذة", icon: ShieldAlert },
-  { labelAr: "التحليلات", icon: BarChart3 },
-  { labelAr: "سجل التدقيق", icon: ScrollText },
+  { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
+  { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
   { labelAr: "الإعدادات", icon: Settings },
 ];
 

@@ -34,6 +34,19 @@ export function formatDate(iso: string | Date): string {
   );
 }
 
+/** Format a byte count in Arabic-friendly units. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} بايت`;
+  const units = ["ك.ب", "م.ب", "غ.ب"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
 /** Relative "منذ ..." style label for recent timestamps. */
 export function formatRelative(iso: string | Date): string {
   const date = typeof iso === "string" ? new Date(iso) : iso;

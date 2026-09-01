@@ -1,0 +1,53 @@
+import type { DocumentDTO } from "./ui-types";
+
+/** In-memory demo document set; API fallback when no database is provisioned. */
+export const DEMO_DOCUMENTS: DocumentDTO[] = [
+  {
+    id: "doc-gl-2025",
+    type: "GENERAL_LEDGER",
+    status: "PARSED",
+    fileName: "GL_FY2025.csv",
+    mimeType: "text/csv",
+    sizeBytes: 482_113,
+    pageCount: null,
+    uploadedAt: "2026-08-28T07:40:00Z",
+    parsedAt: "2026-08-28T07:41:12Z",
+    extractedCount: 126,
+  },
+  {
+    id: "doc-bank-q3",
+    type: "BANK_STATEMENT",
+    status: "PARSED",
+    fileName: "Bank_Statement_Q3.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 1_204_882,
+    pageCount: 12,
+    uploadedAt: "2026-08-28T08:02:00Z",
+    parsedAt: "2026-08-28T08:03:40Z",
+    extractedCount: 88,
+  },
+  {
+    id: "doc-vat-q3",
+    type: "VAT_RETURN",
+    status: "PROCESSING",
+    fileName: "VAT_Return_Q3_2025.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 342_009,
+    pageCount: 4,
+    uploadedAt: "2026-08-30T09:15:00Z",
+    parsedAt: null,
+    extractedCount: null,
+  },
+  {
+    id: "doc-inv-6620",
+    type: "INVOICE",
+    status: "FAILED",
+    fileName: "INV-6620_scan.jpg",
+    mimeType: "image/jpeg",
+    sizeBytes: 2_881_540,
+    pageCount: 1,
+    uploadedAt: "2026-08-30T10:22:00Z",
+    parsedAt: null,
+    extractedCount: null,
+  },
+];

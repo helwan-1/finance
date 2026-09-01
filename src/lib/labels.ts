@@ -2,6 +2,8 @@ import type {
   AnomalyRuleCode,
   AnomalySeverity,
   AnomalyStatus,
+  DocumentStatus,
+  DocumentType,
   ReconMatchStatus,
 } from "./ui-types";
 
@@ -53,6 +55,46 @@ export const MATCH_STATUS_BADGE: Record<ReconMatchStatus, string> = {
   MATCHED: "bg-severity-low/10 text-severity-low ring-severity-low/30",
   PARTIAL: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
   UNMATCHED: "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
+};
+
+export const DOCUMENT_TYPE_LABELS_AR: Record<DocumentType, string> = {
+  INVOICE: "فاتورة",
+  BANK_STATEMENT: "كشف حساب بنكي",
+  VAT_RETURN: "إقرار ضريبة القيمة المضافة",
+  GENERAL_LEDGER: "دفتر الأستاذ العام",
+  PURCHASE_ORDER: "أمر شراء",
+  RECEIPT: "سند قبض",
+  OTHER: "أخرى",
+};
+
+export const DOCUMENT_STATUS_LABELS_AR: Record<DocumentStatus, string> = {
+  UPLOADED: "تم الرفع",
+  PROCESSING: "قيد المعالجة",
+  PARSED: "تم التحليل",
+  FAILED: "فشل",
+  ARCHIVED: "مؤرشف",
+};
+
+export const DOCUMENT_STATUS_BADGE: Record<DocumentStatus, string> = {
+  UPLOADED: "bg-severity-info/10 text-severity-info ring-severity-info/30",
+  PROCESSING: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
+  PARSED: "bg-severity-low/10 text-severity-low ring-severity-low/30",
+  FAILED: "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
+  ARCHIVED: "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5",
+};
+
+/** Arabic labels for audit-trail action codes. */
+export const AUDIT_ACTION_LABELS_AR: Record<string, string> = {
+  VIEW_DOCUMENT: "عرض مستند",
+  DOWNLOAD_DOCUMENT: "تنزيل مستند",
+  RESOLVE_ANOMALY: "معالجة حالة شاذة",
+  DISMISS_ANOMALY: "استبعاد حالة شاذة",
+  ESCALATE_ANOMALY: "تصعيد حالة شاذة",
+  EXPORT_DATA: "تصدير بيانات",
+  RUN_RECONCILIATION: "تشغيل المطابقة",
+  RUN_ANALYSIS: "تشغيل التحليل",
+  LOGIN: "تسجيل دخول",
+  LOGOUT: "تسجيل خروج",
 };
 
 export const SEVERITY_BAR: Record<AnomalySeverity, string> = {

@@ -33,14 +33,24 @@ src/
   app/
     layout.tsx         # RTL + Arabic root layout
     page.tsx           # Dashboard page (anomalies feed)
+    documents/page.tsx       # Document upload + OCR extraction
     reconciliation/page.tsx  # Reconciliation results page
+    analytics/page.tsx       # Benford's Law analytics
+    audit-log/page.tsx       # Immutable audit trail
     globals.css
     api/anomalies/route.ts       # Filtered, tenant-scoped anomalies API
+    api/documents/route.ts       # List (GET) + upload/parse (POST) documents
     api/reconciliation/route.ts  # Tenant-scoped reconciliation sessions API
+    api/analytics/route.ts       # Benford analysis over engagement txns
+    api/audit-log/route.ts       # Immutable audit-trail feed
   components/
-    layout/            # Sidebar, Header, EngagementSwitcher, DashboardShell
+    layout/            # Sidebar (navigable), Header, EngagementSwitcher, Shell
     anomalies/         # AnomaliesFeed, FilterBar, AnomalyCard, StatCards
+    documents/         # DocumentsView, UploadButton
     reconciliation/    # ReconciliationView, SessionCard, MatchesTable
+    analytics/         # AnalyticsView, BenfordChart (dependency-free SVG)
+    audit-log/         # AuditLogView
+  lib/ocr/             # Document parser interface + stub (Textract/Claude seam)
   lib/
     prisma.ts          # Prisma client singleton
     audit/             # Audit algorithms engine (see below)
@@ -77,6 +87,16 @@ Matching is **greedy on descending confidence** (each entry used once), yielding
 `MATCHED` / `PARTIAL` (within an amount tolerance) / `UNMATCHED` results with a
 0–1 confidence and the amount delta. `reconciliationAnomalies()` turns residual
 unmatched entries into `UNRECONCILED` anomaly flags for the feed.
+
+## Document processing (OCR) — `src/lib/ocr`
+
+The app depends only on a `DocumentParser` interface, so PaddleOCR / AWS
+Textract / the Claude API can be plugged in via `getParser()` without touching
+routes or UI. A deterministic `StubDocumentParser` runs until a real provider is
+configured (`OCR_SERVICE_URL` / `ANTHROPIC_API_KEY`), so the upload → parse →
+extract-transactions flow works end to end. `POST /api/documents` registers an
+uploaded file, runs the parser, and (with a DB) persists the document plus the
+extracted transactions in a single Prisma transaction.
 
 ## Multi-tenancy & audit trail
 
