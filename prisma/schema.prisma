@@ -793,3 +793,341 @@ model ImportIssue {
   @@index([importedRecordId])
   @@map("import_issues")
 }
+
+// ============================================================================
+// G3 — Canonical Accounting Foundation (imported accounting EVIDENCE for audit)
+// Frozen design, ADR-G3-01..08. Fact classes:
+//   * SOURCE FACT / immutable  — SourceAccountingContext, DatasetAccount,
+//     JournalEntry, JournalLine, TrialBalance, TrialBalanceRow.
+//     audit_app holds SELECT + INSERT only (UPDATE/DELETE revoked in the G3
+//     migration; construct-then-finalize inside the import transaction).
+//   * MUTABLE WORKING MASTER   — AccountingScope, Account, FiscalPeriod.
+//   * VERSIONED AUDIT INTERPRETATION — AccountMapping, AccountMappingVersion
+//     (immutable history; supersession stamps the pointer/prior-version only).
+// Models are relationless (as G2): every FK — simple + composite tenant — lives
+// in the G3 migration SQL. Canonical money is Decimal(24,6); rate Decimal(24,12).
+// ============================================================================
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+  OTHER
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FiscalPeriodType {
+  MONTH
+  QUARTER
+  YEAR
+  ADJUSTMENT
+}
+
+enum SourceIdentityOrigin {
+  PROFILE
+  MAPPING
+  ROW
+}
+
+enum JournalGroupingCapability {
+  EXPLICIT_ENTRY_AND_LINE_ID
+  EXPLICIT_ENTRY_ID
+  NO_RELIABLE_ENTRY_ID
+}
+
+enum JournalGroupingBasis {
+  SOURCE_ASSERTED_ENTRY_LINE
+  SOURCE_ASSERTED_ENTRY
+}
+
+enum BalanceCapability {
+  AVAILABLE
+  PARTIAL
+  NOT_AVAILABLE
+}
+
+enum BalanceStatus {
+  BALANCED
+  UNBALANCED
+  NOT_EVALUABLE
+}
+
+enum MonetaryBasis {
+  TRANSACTION
+  FUNCTIONAL
+}
+
+enum AccountMappingBasis {
+  EXACT_CODE_IN_SCOPE
+  AUDITOR_ASSERTED
+  IMPORT_CONFIRMED
+}
+
+// --- MUTABLE WORKING MASTER --------------------------------------------------
+
+model AccountingScope {
+  id              String   @id @default(cuid())
+  auditFirmId     String
+  clientCompanyId String
+  key             String // stable scope key within a client (e.g. system:entity:ledger)
+  label           String?
+  sourceSystem    String?
+  sourceEntity    String?
+  sourceLedger    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, clientCompanyId, key])
+  @@index([auditFirmId])
+  @@index([auditFirmId, clientCompanyId])
+  @@map("accounting_scopes")
+}
+
+model Account {
+  id                String         @id @default(cuid())
+  auditFirmId       String
+  clientCompanyId   String
+  accountingScopeId String
+  accountCode       String
+  accountName       String
+  accountType       AccountType?
+  normalBalance     NormalBalance?
+  parentAccountId   String?
+  status            AccountStatus  @default(ACTIVE)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // C3: same accountCode may coexist under different scopes (no client-global unique).
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, clientCompanyId, accountingScopeId, accountCode])
+  @@index([auditFirmId])
+  @@index([auditFirmId, clientCompanyId, accountingScopeId, accountCode])
+  @@map("accounts")
+}
+
+model FiscalPeriod {
+  id              String           @id @default(cuid())
+  auditFirmId     String
+  clientCompanyId String
+  engagementId    String?
+  fiscalYear      Int
+  periodNo        Int
+  periodKey       String
+  startDate       DateTime
+  endDate         DateTime
+  periodType      FiscalPeriodType
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, clientCompanyId, fiscalYear, periodNo])
+  @@index([auditFirmId])
+  @@index([auditFirmId, clientCompanyId, fiscalYear])
+  @@map("fiscal_periods")
+}
+
+// --- SOURCE FACT / immutable -------------------------------------------------
+
+model SourceAccountingContext {
+  id                  String               @id @default(cuid())
+  auditFirmId         String
+  datasetId           String
+  sourceSystem        String?
+  sourceSystemVersion String?
+  sourceEntity        String?
+  sourceLedger        String?
+  capturedFrom        SourceIdentityOrigin
+  createdAt           DateTime             @default(now())
+
+  // Deterministic one-per-(dataset,tuple) enforced by a COALESCE unique index
+  // in the G3 migration (context-zero = all-null attributes).
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([auditFirmId, datasetId])
+  @@index([auditFirmId, sourceSystem, sourceEntity, sourceLedger])
+  @@map("source_accounting_contexts")
+}
+
+model DatasetAccount {
+  id                        String   @id @default(cuid())
+  auditFirmId               String
+  datasetId                 String
+  sourceAccountingContextId String
+  sourceAccountCode         String
+  sourceAccountName         String?
+  firstImportedRecordId     String
+  occurrenceCount           Int      @default(1)
+  createdAt                 DateTime @default(now())
+
+  // C2: identity = firm + dataset + context + sourceAccountCode.
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, datasetId, sourceAccountingContextId, sourceAccountCode])
+  @@index([auditFirmId])
+  @@index([auditFirmId, datasetId])
+  @@map("dataset_accounts")
+}
+
+model JournalEntry {
+  id                        String               @id @default(cuid())
+  auditFirmId               String
+  engagementId              String
+  clientCompanyId           String?
+  datasetId                 String
+  sourceAccountingContextId String?
+  fiscalPeriodId            String?
+  sourceEntryId             String // present only when source-asserted (never synthesized)
+  sourceJournal             String?
+  sourceDocumentId          String?
+  sourceDocumentNumber      String?
+  entryDate                 DateTime?
+  groupingBasis             JournalGroupingBasis
+  balanceCapability         BalanceCapability
+  balanceStatus             BalanceStatus?
+  monetaryBasis             MonetaryBasis?
+  balanceCurrency           String?
+  debitTotal                Decimal?             @db.Decimal(24, 6)
+  creditTotal               Decimal?             @db.Decimal(24, 6)
+  difference                Decimal?             @db.Decimal(24, 6)
+  lineageClass              LineageClass         @default(VERIFIED)
+  createdAt                 DateTime             @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, datasetId, sourceEntryId])
+  @@index([auditFirmId])
+  @@index([auditFirmId, datasetId])
+  @@index([auditFirmId, sourceEntryId])
+  @@index([auditFirmId, fiscalPeriodId])
+  @@index([auditFirmId, sourceAccountingContextId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id                  String                    @id @default(cuid())
+  auditFirmId         String
+  datasetId           String
+  journalEntryId      String? // NULL when NO_RELIABLE_ENTRY_ID (D3/C1: no synthetic entry)
+  lineNo              Int
+  accountSnapshotId   String // → DatasetAccount (source truth; no mutable accountId here)
+  fiscalPeriodId      String?
+  transactionDebit    Decimal?                  @db.Decimal(24, 6)
+  transactionCredit   Decimal?                  @db.Decimal(24, 6)
+  transactionCurrency String?
+  functionalDebit     Decimal?                  @db.Decimal(24, 6)
+  functionalCredit    Decimal?                  @db.Decimal(24, 6)
+  functionalCurrency  String?
+  exchangeRate        Decimal?                  @db.Decimal(24, 12)
+  exchangeRateSource  String?
+  costCenter          String?
+  profitCenter        String?
+  counterparty        String?
+  description         String?
+  reference           String?
+  documentNumber      String?
+  postedByUserId      String?
+  sourceType          String?
+  sourceLineId        String?
+  groupingCapability  JournalGroupingCapability
+  lineageClass        LineageClass              @default(VERIFIED)
+  importedRecordId    String // real G2 lineage (VERIFIED requires this)
+  createdAt           DateTime                  @default(now())
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([auditFirmId, datasetId])
+  @@index([auditFirmId, journalEntryId])
+  @@index([auditFirmId, accountSnapshotId])
+  @@index([auditFirmId, fiscalPeriodId])
+  @@index([auditFirmId, importedRecordId])
+  @@map("journal_lines")
+}
+
+model TrialBalance {
+  id                        String    @id @default(cuid())
+  auditFirmId               String
+  engagementId              String
+  clientCompanyId           String?
+  datasetId                 String
+  sourceAccountingContextId String?
+  fiscalPeriodId            String?
+  currency                  String?
+  asOfDate                  DateTime?
+  createdAt                 DateTime  @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, datasetId])
+  @@index([auditFirmId])
+  @@index([auditFirmId, datasetId])
+  @@map("trial_balances")
+}
+
+model TrialBalanceRow {
+  id                String       @id @default(cuid())
+  auditFirmId       String
+  datasetId         String
+  trialBalanceId    String
+  accountSnapshotId String
+  openingDebit      Decimal?     @db.Decimal(24, 6)
+  openingCredit     Decimal?     @db.Decimal(24, 6)
+  periodDebit       Decimal?     @db.Decimal(24, 6)
+  periodCredit      Decimal?     @db.Decimal(24, 6)
+  closingDebit      Decimal?     @db.Decimal(24, 6)
+  closingCredit     Decimal?     @db.Decimal(24, 6)
+  currency          String?
+  lineageClass      LineageClass @default(VERIFIED)
+  importedRecordId  String
+  createdAt         DateTime     @default(now())
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([auditFirmId, trialBalanceId])
+  @@index([auditFirmId, accountSnapshotId])
+  @@index([auditFirmId, importedRecordId])
+  @@map("trial_balance_rows")
+}
+
+// --- VERSIONED AUDIT INTERPRETATION ------------------------------------------
+
+model AccountMapping {
+  id               String   @id @default(cuid())
+  auditFirmId      String
+  datasetAccountId String
+  currentVersionId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // One mapping per DatasetAccount.
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, datasetAccountId])
+  @@index([auditFirmId])
+  @@map("account_mappings")
+}
+
+model AccountMappingVersion {
+  id               String              @id @default(cuid())
+  auditFirmId      String
+  accountMappingId String
+  version          Int
+  accountId        String
+  basis            AccountMappingBasis
+  mappedById       String?
+  mappedAt         DateTime            @default(now())
+  supersededAt     DateTime? // sole sanctioned post-insert metadata update
+
+  @@unique([auditFirmId, id])
+  @@unique([accountMappingId, version])
+  @@index([auditFirmId])
+  @@index([accountMappingId])
+  @@map("account_mapping_versions")
+}

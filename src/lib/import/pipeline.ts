@@ -10,6 +10,7 @@ import { buildEffectiveProfile, type ProfileInput } from "./profile";
 import { suggestMapping, applyMapping, type MappingIssue } from "./mapping";
 import { validateRow, type FieldIssue, type DateInterpretation } from "./validate";
 import { TARGET_FIELD_SET_VERSION, NORMALIZER_VERSION, type DatasetKind } from "./vocab";
+import { createCanonicalAccounting, type CanonicalRecord } from "@/lib/accounting/canonical";
 
 export interface StartParams {
   auditFirmId: string;
@@ -24,6 +25,14 @@ export interface StartParams {
   profile?: ProfileInput;
   acknowledgeDuplicate?: boolean;
   label?: string;
+  /**
+   * G3 frozen import provenance (F1/F2). Both are optional and, when supplied,
+   * are persisted on the batch's effectiveProfileJson so canonical resolution is
+   * explicit and reproducible across retries. Absent → no amount-sign direction
+   * is fabricated and no source identity is trusted (NO_RELIABLE_ENTRY_ID).
+   */
+  amountSignConvention?: "POSITIVE_DEBIT_NEGATIVE_CREDIT" | "POSITIVE_CREDIT_NEGATIVE_DEBIT";
+  sourceIdentityMap?: Record<string, string>;
 }
 
 export interface StartResult {
@@ -224,7 +233,15 @@ export async function startImport(p: StartParams): Promise<StartResult> {
         status: "VALIDATING", idempotencyKey: p.idempotencyKey, startedById: p.userId,
         rowsTotal: prepared.length, rowsAccepted: prepared.filter((r) => r.status !== "REJECTED").length,
         rowsRejected: prepared.filter((r) => r.status === "REJECTED").length,
-        effectiveProfileJson: eff as unknown as Prisma.InputJsonValue, effectiveProfileHash: eff.hash,
+        // Freeze G3 provenance alongside the effective profile (reproducible on retry).
+        effectiveProfileJson: {
+          ...(eff as unknown as Record<string, unknown>),
+          g3: {
+            amountSignConvention: p.amountSignConvention ?? null,
+            sourceIdentityMap: p.sourceIdentityMap ?? null,
+          },
+        } as unknown as Prisma.InputJsonValue,
+        effectiveProfileHash: eff.hash,
       },
       select: { id: true },
     });
@@ -319,6 +336,14 @@ export interface ConfirmResult {
   datasetId?: string;
   datasetHash?: string;
   transactionsCreated?: number;
+  canonical?: {
+    contexts: number;
+    datasetAccounts: number;
+    journalEntries: number;
+    journalLines: number;
+    trialBalances: number;
+    trialBalanceRows: number;
+  };
 }
 
 export interface ConfirmOptions {
@@ -369,7 +394,7 @@ export async function confirmImport(
     return await withTenantContext(auditFirmId, async (tx) => {
       const batch = await tx.importBatch.findUnique({
         where: { id: batchId },
-        select: { id: true, status: true, datasetKind: true, engagementId: true, resultDatasetId: true, effectiveProfileHash: true, importMappingVersionId: true },
+        select: { id: true, status: true, datasetKind: true, engagementId: true, resultDatasetId: true, effectiveProfileHash: true, effectiveProfileJson: true, importMappingVersionId: true },
       });
       if (!batch) return { status: "NOT_READY" };
       if (batch.resultDatasetId) return { status: "ALREADY_COMPLETED", datasetId: batch.resultDatasetId };
@@ -384,10 +409,13 @@ export async function confirmImport(
 
       const records = await tx.importedRecord.findMany({
         where: { datasetId: dataset.id }, orderBy: { sourceRowNo: "asc" },
-        select: { id: true, sourceRowNo: true, rawHash: true, normalizedJson: true, status: true },
+        select: { id: true, sourceRowNo: true, rawHash: true, rawCells: true, normalizedJson: true, status: true },
       });
-      const eng = await tx.auditEngagement.findUnique({ where: { id: batch.engagementId }, select: { currency: true } });
+      const eng = await tx.auditEngagement.findUnique({ where: { id: batch.engagementId }, select: { currency: true, clientCompanyId: true } });
       const currency = eng?.currency ?? "SAR";
+      const mapJson = batch.importMappingVersionId
+        ? ((await tx.importMappingVersion.findUnique({ where: { id: batch.importMappingVersionId }, select: { mapJson: true } }))?.mapJson ?? {})
+        : {};
 
       await tx.importBatch.update({ where: { id: batch.id }, data: { status: "IMPORTING" } });
 
@@ -399,6 +427,25 @@ export async function confirmImport(
         await tx.transaction.create({ data: { ...payload, auditFirmId, engagementId: batch.engagementId, importedRecordId: rec.id, datasetId: dataset.id } });
         created += 1;
       }
+
+      // G3: canonical accounting facts, from the SAME ImportedRecords (single
+      // source of truth). Constructed here, before finalize — so a fault rolls
+      // them back atomically with the bridge (Section K). Direction + source
+      // identity come only from the frozen provenance persisted at start (F1/F2).
+      const g3 = ((batch.effectiveProfileJson as { g3?: { amountSignConvention?: "POSITIVE_DEBIT_NEGATIVE_CREDIT" | "POSITIVE_CREDIT_NEGATIVE_DEBIT" | null; sourceIdentityMap?: Record<string, string> | null } } | null)?.g3) ?? {};
+      const canonical = await createCanonicalAccounting(tx, {
+        auditFirmId, engagementId: batch.engagementId, clientCompanyId: eng?.clientCompanyId ?? null,
+        datasetId: dataset.id, kind: batch.datasetKind as DatasetKind,
+        mapJson: mapJson as Record<string, string>,
+        amountSignConvention: g3.amountSignConvention ?? null,
+        sourceIdentityMap: g3.sourceIdentityMap ?? null,
+        records: records.map((r) => ({
+          id: r.id, sourceRowNo: r.sourceRowNo,
+          rawCells: (r.rawCells ?? []) as unknown as RawCell[],
+          normalizedJson: (r.normalizedJson ?? null) as Record<string, string | null> | null,
+          status: r.status,
+        })) as CanonicalRecord[],
+      });
 
       if (opts?.faultAfterTransactions) throw new Error("injected-fault-before-finalize");
 
@@ -414,7 +461,7 @@ export async function confirmImport(
       await tx.dataset.update({ where: { id: dataset.id }, data: { status: finalStatus, datasetHash: dHash, finalizedAt: new Date() } });
       await tx.importAttempt.update({ where: { id: dataset.importAttemptId }, data: { status: "SUCCEEDED", endedAt: new Date(), confirmedById: userId, confirmedAt: new Date() } });
       await tx.importBatch.update({ where: { id: batch.id }, data: { status: finalStatus, resultDatasetId: dataset.id, completedAt: new Date() } });
-      return { status: finalStatus, datasetId: dataset.id, datasetHash: dHash, transactionsCreated: created };
+      return { status: finalStatus, datasetId: dataset.id, datasetHash: dHash, transactionsCreated: created, canonical };
     });
   } catch (e) {
     if (recover) {
