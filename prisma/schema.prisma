@@ -14,7 +14,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // Runtime connection: the NON-owner `audit_app` role, which is subject to
   // Row-Level Security (tenant isolation). See migration *_g1_security_rls.
   url       = env("DATABASE_URL")
@@ -138,28 +138,116 @@ enum AuditAction {
 }
 
 // ----------------------------------------------------------------------------
+// G2 — Source custody, dataset & import lineage (enums)
+// ----------------------------------------------------------------------------
+
+enum SourceStorageProvider {
+  NONE // no bytes retained (legacy / metadata-only)
+  OBJECT_STORE // provider-neutral object store behind the storage port
+}
+
+enum CustodyStatus {
+  RETAINED // bytes actually stored & retrievable (required for new imports)
+  METADATA_ONLY // metadata kept, bytes never retained (legacy documents)
+  NOT_RETAINED // no bytes and no artifact evidence (legacy container)
+  TOMBSTONED // logically deleted; blocked while legalHold is true
+}
+
+// Provider-neutral processing provenance — records what happened, not permission.
+enum ProcessingBoundary {
+  NONE
+  INTERNAL
+  EXTERNAL
+}
+
+enum DatasetKind {
+  GENERAL_LEDGER
+  TRIAL_BALANCE
+  BANK
+  OTHER
+}
+
+enum LineageClass {
+  VERIFIED
+  PARTIAL_LINEAGE
+  UNKNOWN_LINEAGE
+  LEGACY_UNVERIFIED
+}
+
+enum ImportFormat {
+  CSV
+  XLSX
+}
+
+enum ImportBatchStatus {
+  RECEIVED
+  PROFILING
+  VALIDATING
+  READY // halted — explicit auditor confirmation required (C8)
+  IMPORTING
+  COMPLETED
+  COMPLETED_WITH_ISSUES
+  FAILED
+  CANCELLED
+}
+
+enum ImportAttemptStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum DatasetStatus {
+  PENDING
+  COMPLETED
+  COMPLETED_WITH_ISSUES
+  FAILED
+}
+
+enum ImportedRecordStatus {
+  ACCEPTED
+  ACCEPTED_WITH_WARNING
+  REJECTED
+}
+
+enum ImportIssueScope {
+  FILE
+  PROFILE
+  MAPPING
+  ROW
+  FIELD
+}
+
+enum ImportIssueSeverity {
+  ERROR
+  WARNING
+  INFO
+}
+
+// ----------------------------------------------------------------------------
 // Tenancy root
 // ----------------------------------------------------------------------------
 
 model AuditFirm {
-  id           String   @id @default(cuid())
-  name         String
-  nameAr       String // Arabic display name
-  licenseNo    String   @unique
+  id        String   @id @default(cuid())
+  name      String
+  nameAr    String // Arabic display name
+  licenseNo String   @unique
   // Firm-level audit configuration (VAT rate, business hours, weekend, ...).
-  settings     Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users          User[]
+  users           User[]
   clientCompanies ClientCompany[]
-  engagements    AuditEngagement[]
-  documents      Document[]
-  transactions   Transaction[]
+  engagements     AuditEngagement[]
+  documents       Document[]
+  transactions    Transaction[]
   reconciliations ReconciliationSession[]
-  anomalies      AnomalyFlag[]
-  auditLogs      AuditLog[]
-  auditRules     AuditRule[]
+  anomalies       AnomalyFlag[]
+  auditLogs       AuditLog[]
+  auditRules      AuditRule[]
 
   @@map("audit_firms")
 }
@@ -174,13 +262,13 @@ model User {
   isActive     Boolean  @default(true)
   // bcrypt hash; never returned to the client.
   passwordHash String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  auditFirm          AuditFirm            @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
-  resolvedAnomalies  AnomalyFlag[]        @relation("AnomalyResolver")
-  auditLogs          AuditLog[]
-  engagementMembers  EngagementMember[]
+  auditFirm         AuditFirm          @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  resolvedAnomalies AnomalyFlag[]      @relation("AnomalyResolver")
+  auditLogs         AuditLog[]
+  engagementMembers EngagementMember[]
 
   // Email is unique within a firm, not globally.
   @@unique([auditFirmId, email])
@@ -269,30 +357,42 @@ model Document {
   parsedData   Json?
   uploadedAt   DateTime       @default(now())
   parsedAt     DateTime?
+  // G2 lineage bridge: a Document may reference the SourceFile whose bytes
+  // produced it. Scalar-only (DB FK added in the G2 migration). Nullable.
+  sourceFileId String?
 
-  auditFirm    AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
-  engagement   AuditEngagement  @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  auditFirm    AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement   AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 
   @@index([auditFirmId])
   @@index([engagementId, status])
+  @@index([sourceFileId])
   @@map("documents")
 }
 
 model Transaction {
-  id           String            @id @default(cuid())
-  auditFirmId  String
-  engagementId String
-  documentId   String?
+  id               String  @id @default(cuid())
+  auditFirmId      String
+  engagementId     String
+  documentId       String?
+  // G2 lineage bridge (transitional for the flat model — IC-2 / ADR-G2-11):
+  //   importedRecordId is authoritative row lineage; unique among non-nulls so
+  //   ImportedRecord -> 0..1 Transaction holds for the current flat model. G3
+  //   may map one ImportedRecord to many canonical lines via separate entities.
+  //   datasetId is a denormalized, immutable index key. DB FKs added in the G2
+  //   migration (composite tenant FKs). Both nullable for legacy rows.
+  datasetId        String?
+  importedRecordId String?
 
-  reference    String // voucher / invoice / statement line reference
-  description  String
+  reference   String // voucher / invoice / statement line reference
+  description String
   // MONETARY AMOUNTS — always Decimal(15, 2). Never JS float.
-  amount       Decimal           @db.Decimal(15, 2)
-  vatAmount    Decimal?          @db.Decimal(15, 2)
-  currency     String            @default("SAR")
-  type         TransactionType
-  source       TransactionSource
+  amount      Decimal           @db.Decimal(15, 2)
+  vatAmount   Decimal?          @db.Decimal(15, 2)
+  currency    String            @default("SAR")
+  type        TransactionType
+  source      TransactionSource
 
   counterparty String?
   account      String? // GL account code
@@ -300,7 +400,7 @@ model Transaction {
   postedAt     DateTime
   // valueDate is the accounting/value date.
   valueDate    DateTime
-  createdAt    DateTime          @default(now())
+  createdAt    DateTime @default(now())
 
   auditFirm  AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
   engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
@@ -310,9 +410,12 @@ model Transaction {
   matchesAsTarget ReconciliationMatch[] @relation("MatchTarget")
   anomalies       AnomalyFlag[]
 
+  // IC-2: at most one Transaction per ImportedRecord (non-null unique).
+  @@unique([importedRecordId])
   @@index([auditFirmId])
   @@index([engagementId, postedAt])
   @@index([engagementId, source])
+  @@index([datasetId])
   @@map("transactions")
 }
 
@@ -335,8 +438,8 @@ model ReconciliationSession {
   completedAt  DateTime?
   createdAt    DateTime             @default(now())
 
-  auditFirm  AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
-  engagement AuditEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  auditFirm  AuditFirm             @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement AuditEngagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   matches    ReconciliationMatch[]
 
   @@index([auditFirmId])
@@ -345,15 +448,15 @@ model ReconciliationSession {
 }
 
 model ReconciliationMatch {
-  id             String      @id @default(cuid())
-  sessionId      String
-  sourceTxnId    String
-  targetTxnId    String?
-  status         MatchStatus @default(UNMATCHED)
+  id          String      @id @default(cuid())
+  sessionId   String
+  sourceTxnId String
+  targetTxnId String?
+  status      MatchStatus @default(UNMATCHED)
   // Confidence score 0.00 - 1.00 for fuzzy matches.
-  confidence     Decimal     @db.Decimal(5, 4)
-  amountDelta    Decimal?    @db.Decimal(15, 2)
-  createdAt      DateTime    @default(now())
+  confidence  Decimal     @db.Decimal(5, 4)
+  amountDelta Decimal?    @db.Decimal(15, 2)
+  createdAt   DateTime    @default(now())
 
   session   ReconciliationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sourceTxn Transaction           @relation("MatchSource", fields: [sourceTxnId], references: [id], onDelete: Cascade)
@@ -368,29 +471,29 @@ model ReconciliationMatch {
 // ----------------------------------------------------------------------------
 
 model AnomalyFlag {
-  id           String          @id @default(cuid())
-  auditFirmId  String
-  engagementId String
+  id            String  @id @default(cuid())
+  auditFirmId   String
+  engagementId  String
   transactionId String?
 
-  ruleCode     AnomalyRuleCode
-  severity     AnomalySeverity
-  status       AnomalyStatus   @default(OPEN)
-  title        String
-  titleAr      String
-  description  String
+  ruleCode      AnomalyRuleCode
+  severity      AnomalySeverity
+  status        AnomalyStatus   @default(OPEN)
+  title         String
+  titleAr       String
+  description   String
   descriptionAr String
   // Structured evidence for the flag (e.g. Benford stats, matched pair ids).
-  evidence     Json?
+  evidence      Json?
   // Numeric score used for ranking within the feed.
-  score        Decimal         @db.Decimal(5, 2)
+  score         Decimal         @db.Decimal(5, 2)
 
   // Set when this flag was produced by a user-defined rule (ruleCode CUSTOM_RULE).
-  auditRuleId  String?
+  auditRuleId String?
 
-  detectedAt   DateTime        @default(now())
-  resolvedAt   DateTime?
-  resolvedById String?
+  detectedAt     DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolvedById   String?
   resolutionNote String?
 
   auditFirm   AuditFirm       @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
@@ -413,29 +516,29 @@ model AnomalyFlag {
 // ----------------------------------------------------------------------------
 
 model AuditRule {
-  id           String          @id @default(cuid())
+  id           String  @id @default(cuid())
   auditFirmId  String
   // Null → a firm-wide rule applied to every engagement; set → engagement-scoped.
   engagementId String?
 
-  name         String
-  nameAr       String
+  name          String
+  nameAr        String
   // Short human code shown on findings (e.g. "LIMIT-100K").
-  code         String
-  category     RuleCategory
-  severity     AnomalySeverity @default(MEDIUM)
-  enabled      Boolean         @default(true)
+  code          String
+  category      RuleCategory
+  severity      AnomalySeverity @default(MEDIUM)
+  enabled       Boolean         @default(true)
   descriptionAr String?
   // Typed rule definition (discriminated union), evaluated by the engine.
-  definition   Json
+  definition    Json
 
-  createdById  String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  auditFirm    AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
-  engagement   AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: Cascade)
-  anomalies    AnomalyFlag[]
+  auditFirm  AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
+  engagement AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  anomalies  AnomalyFlag[]
 
   @@index([auditFirmId, enabled])
   @@index([engagementId])
@@ -447,20 +550,20 @@ model AuditRule {
 // ----------------------------------------------------------------------------
 
 model AuditLog {
-  id           String      @id @default(cuid())
+  id           String  @id @default(cuid())
   auditFirmId  String
   engagementId String?
   userId       String
 
-  action       AuditAction
+  action     AuditAction
   // Type + id of the affected entity (e.g. "AnomalyFlag", "<id>").
-  entityType   String
-  entityId     String?
+  entityType String
+  entityId   String?
   // Arbitrary context (old/new values, filters used on export, etc.).
-  metadata     Json?
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime    @default(now())
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
 
   auditFirm  AuditFirm        @relation(fields: [auditFirmId], references: [id], onDelete: Cascade)
   engagement AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
@@ -470,4 +573,223 @@ model AuditLog {
   @@index([engagementId, createdAt])
   @@index([userId])
   @@map("audit_logs")
+}
+
+// ----------------------------------------------------------------------------
+// G2 — Source custody, dataset & import lineage (9 tables)
+// Relationless models: FKs (single + composite tenant FKs) and RLS are added in
+// the G2 migration SQL. Every table carries auditFirmId directly (G1 parity) and
+// exposes @@unique([auditFirmId, id]) as the target of composite tenant FKs.
+// ----------------------------------------------------------------------------
+
+model SourceFile {
+  id                  String                @id @default(cuid())
+  auditFirmId         String
+  engagementId        String?
+  clientCompanyId     String?
+  originalFileName    String
+  mimeType            String
+  sizeBytes           BigInt
+  sha256              String? // null only for legacy / no-artifact
+  uploadedById        String?
+  uploadedAt          DateTime              @default(now())
+  storageProvider     SourceStorageProvider @default(NONE)
+  storageBucket       String?
+  storageObjectKey    String?
+  storageVersion      String?
+  custodyStatus       CustodyStatus
+  processingBoundary  ProcessingBoundary    @default(NONE)
+  processorRef        String?
+  retentionPolicy     String?
+  legalHold           Boolean               @default(false)
+  tombstonedAt        DateTime?
+  legacyStorageKeyRaw String?
+  createdAt           DateTime              @default(now())
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([engagementId])
+  @@index([auditFirmId, sha256])
+  @@index([auditFirmId, custodyStatus])
+  @@map("source_files")
+}
+
+model ImportProfile {
+  id                   String       @id @default(cuid())
+  auditFirmId          String
+  clientCompanyId      String?
+  name                 String
+  format               ImportFormat
+  encoding             String
+  delimiter            String?
+  sheet                String?
+  headerRow            Int
+  locale               String
+  dateInterpretation   String
+  numberInterpretation String
+  parserVersion        String
+  normalizerVersion    String
+  profileHash          String
+  createdById          String?
+  createdAt            DateTime     @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, profileHash])
+  @@index([auditFirmId])
+  @@index([auditFirmId, clientCompanyId])
+  @@map("import_profiles")
+}
+
+model ImportMapping {
+  id               String      @id @default(cuid())
+  auditFirmId      String
+  clientCompanyId  String?
+  name             String
+  datasetKind      DatasetKind
+  currentVersionId String?
+  createdAt        DateTime    @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, clientCompanyId, name, datasetKind])
+  @@index([auditFirmId])
+  @@map("import_mappings")
+}
+
+model ImportMappingVersion {
+  id                    String   @id @default(cuid())
+  auditFirmId           String
+  importMappingId       String
+  version               Int
+  mapJson               Json
+  targetFieldSetVersion String
+  mappingHash           String
+  createdById           String?
+  createdAt             DateTime @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([importMappingId, version])
+  @@unique([auditFirmId, mappingHash])
+  @@index([auditFirmId])
+  @@index([importMappingId])
+  @@map("import_mapping_versions")
+}
+
+model ImportBatch {
+  id                     String            @id @default(cuid())
+  auditFirmId            String
+  engagementId           String
+  sourceFileId           String? // nullable: legacy container has no file (C11)
+  importProfileId        String?
+  importMappingVersionId String?
+  datasetKind            DatasetKind
+  status                 ImportBatchStatus @default(RECEIVED)
+  idempotencyKey         String
+  effectiveProfileJson   Json?
+  effectiveProfileHash   String?
+  resultDatasetId        String? // set once on success (immutable)
+  rowsTotal              Int               @default(0)
+  rowsAccepted           Int               @default(0)
+  rowsRejected           Int               @default(0)
+  startedById            String?
+  startedAt              DateTime          @default(now())
+  completedAt            DateTime?
+  failureReason          String?
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, idempotencyKey])
+  @@index([auditFirmId])
+  @@index([engagementId, status])
+  @@index([sourceFileId])
+  @@map("import_batches")
+}
+
+model ImportAttempt {
+  id            String              @id @default(cuid())
+  auditFirmId   String
+  importBatchId String
+  attemptNo     Int
+  status        ImportAttemptStatus @default(RUNNING)
+  startedById   String?
+  startedAt     DateTime            @default(now())
+  endedAt       DateTime?
+  confirmedById String?
+  confirmedAt   DateTime?
+  failureReason String?
+
+  @@unique([auditFirmId, id])
+  @@unique([importBatchId, attemptNo])
+  @@index([auditFirmId])
+  @@index([importBatchId])
+  @@map("import_attempts")
+}
+
+model Dataset {
+  id                String        @id @default(cuid())
+  auditFirmId       String
+  engagementId      String
+  clientCompanyId   String?
+  importBatchId     String
+  importAttemptId   String
+  sourceFileId      String? // nullable: legacy container (C11)
+  kind              DatasetKind
+  label             String
+  datasetHash       String? // null until finalized / legacy
+  lineageClass      LineageClass  @default(VERIFIED)
+  status            DatasetStatus @default(PENDING)
+  rowCountTotal     Int           @default(0)
+  rowCountAccepted  Int           @default(0)
+  rowCountRejected  Int           @default(0)
+  normalizerVersion String
+  finalizedAt       DateTime?
+  createdAt         DateTime      @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([importAttemptId])
+  @@index([auditFirmId])
+  @@index([engagementId, kind, status])
+  @@index([datasetHash])
+  @@map("datasets")
+}
+
+model ImportedRecord {
+  id             String               @id @default(cuid())
+  auditFirmId    String
+  datasetId      String
+  importBatchId  String
+  sourceFileId   String?
+  sourceRowNo    Int
+  rawCells       Json // lossless positional [{i,h,v}] (C5)
+  rawHash        String
+  normalizedJson Json?
+  status         ImportedRecordStatus
+
+  @@unique([auditFirmId, id])
+  @@unique([datasetId, sourceRowNo])
+  @@index([auditFirmId])
+  @@index([datasetId, status])
+  @@index([auditFirmId, rawHash])
+  @@map("imported_records")
+}
+
+model ImportIssue {
+  id               String              @id @default(cuid())
+  auditFirmId      String
+  importBatchId    String
+  importAttemptId  String?
+  importedRecordId String?
+  datasetId        String?
+  scope            ImportIssueScope
+  field            String?
+  severity         ImportIssueSeverity
+  code             String
+  message          String
+  rawValue         String?
+  blocking         Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId, severity])
+  @@index([importBatchId])
+  @@index([importedRecordId])
+  @@map("import_issues")
 }

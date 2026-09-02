@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { DEMO_DOCUMENTS } from "@/lib/demo-documents";
-import { getParser } from "@/lib/ocr";
+import { StubDocumentParser } from "@/lib/ocr";
+import { selectParser } from "@/lib/ocr/select";
 import { authorize } from "@/lib/auth/guard";
 import { withTenantContext } from "@/lib/db/tenant";
+import { getStorageAdapter, firmBucket } from "@/lib/storage";
+import { sha256Bytes } from "@/lib/import/canonical";
 import { publishAuditEvent } from "@/lib/events";
 import type {
   DocumentDTO,
@@ -102,37 +105,48 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const fileName = file.name;
   const mimeType = file.type || "application/octet-stream";
   const sizeBytes = file.size;
-  const contentBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const contentBase64 = bytes.toString("base64");
 
-  const parser = getParser();
-  const parsed = await parser.parse({
-    fileName,
-    mimeType,
-    sizeBytes,
-    documentType: type,
-    contentBase64,
-  });
-
-  const synthesized = (): DocumentDTO => ({
+  const synthesized = (pageCount: number, extractedCount: number): DocumentDTO => ({
     id: `doc-${Date.now()}`,
     type,
     status: "PARSED",
     fileName,
     mimeType,
     sizeBytes,
-    pageCount: parsed.pageCount,
+    pageCount,
     uploadedAt: new Date().toISOString(),
     parsedAt: new Date().toISOString(),
-    extractedCount: parsed.lines.length,
+    extractedCount,
   });
 
-  // Demo path (non-production, no session): no persistence.
+  // Demo path (non-production, no session): stub parse, no persistence, no egress.
   if (!authz.session) {
-    return NextResponse.json({ document: synthesized() }, { status: 201 });
+    const p = await new StubDocumentParser().parse({ fileName, mimeType, sizeBytes, documentType: type, contentBase64 });
+    return NextResponse.json({ document: synthesized(p.pageCount, p.lines.length) }, { status: 201 });
   }
   if (!engagementId) {
     return NextResponse.json({ error: "engagementId is required" }, { status: 400 });
   }
+  const firmId = authz.session.auditFirmId;
+  const userId = authz.session.userId;
+
+  // Enforce Private Audit Mode, then parse (provider-neutral provenance).
+  const firm = await withTenantContext(firmId, (tx) =>
+    tx.auditFirm.findUnique({ where: { id: firmId }, select: { settings: true } }),
+  );
+  const privateMode = !!(firm?.settings as { privateMode?: boolean } | null)?.privateMode;
+  const { parser, boundary, processorRef } = selectParser(privateMode);
+  const parsed = await parser.parse({ fileName, mimeType, sizeBytes, documentType: type, contentBase64 });
+
+  // Store original bytes (custody) and confirm RETAINED before persisting.
+  const sha = sha256Bytes(bytes);
+  const adapter = getStorageAdapter();
+  const bucket = firmBucket(firmId);
+  await adapter.put(bucket, sha, bytes);
+  const st = await adapter.stat(bucket, sha);
+  const retained = !!st && st.sizeBytes === bytes.length;
 
   try {
     const created = await withTenantContext(authz.session.auditFirmId, async (tx) => {
@@ -143,6 +157,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
       if (!engagement) return null;
 
+      // Custody: create the SourceFile for the original bytes, then link it.
+      const sf = await tx.sourceFile.create({
+        data: {
+          auditFirmId: engagement.auditFirmId,
+          engagementId: engagement.id,
+          originalFileName: fileName,
+          mimeType,
+          sizeBytes: BigInt(bytes.length),
+          sha256: sha,
+          uploadedById: userId,
+          storageProvider: "OBJECT_STORE",
+          storageBucket: bucket,
+          storageObjectKey: sha,
+          custodyStatus: retained ? "RETAINED" : "NOT_RETAINED",
+          processingBoundary: boundary,
+          processorRef,
+        },
+        select: { id: true },
+      });
+
       const doc = await tx.document.create({
         data: {
           auditFirmId: engagement.auditFirmId,
@@ -150,7 +184,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           type,
           status: "PARSED",
           fileName,
-          storageKey: `engagements/${engagement.id}/${Date.now()}-${fileName}`,
+          storageKey: `${bucket}/${sha}`,
+          sourceFileId: sf.id,
           mimeType,
           sizeBytes,
           pageCount: parsed.pageCount,
