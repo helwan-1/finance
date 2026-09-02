@@ -532,6 +532,12 @@ model AuditRule {
   // Typed rule definition (discriminated union), evaluated by the engine.
   definition    Json
 
+  // G4 (additive): firm-stable semantic key + current version pointer. Nullable
+  // for existing rows (backfill deferred to a later phase); NULLs are distinct
+  // so the firm-scoped unique holds for un-keyed legacy rows.
+  key              String?
+  currentVersionId String?
+
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -540,6 +546,7 @@ model AuditRule {
   engagement AuditEngagement? @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   anomalies  AnomalyFlag[]
 
+  @@unique([auditFirmId, key])
   @@index([auditFirmId, enabled])
   @@index([engagementId])
   @@map("audit_rules")
@@ -1130,4 +1137,441 @@ model AccountMappingVersion {
   @@index([auditFirmId])
   @@index([accountMappingId])
   @@map("account_mapping_versions")
+}
+
+// ============================================================================
+// G4 — Audit Run & Reproducibility Foundation (PHASE A: persistence only)
+// Frozen design ADR-G4-01..23. NO execution behavior in Phase A.
+// Fact classes: IMMUTABLE VERSION · IMMUTABLE BUSINESS FACT ·
+//   MUTABLE POINTER/MASTER · EXECUTION STATE · REVIEW STATE · TYPED EVIDENCE JOIN.
+// Models are relationless (as G2/G3): all FKs (simple + composite tenant),
+//   RLS, immutability grants, and CHECK/trigger invariants live in the G4
+//   migration SQL. Semantic identity uses stable keys/hashes, never row PKs.
+// ============================================================================
+
+enum AuditTestType {
+  RULE
+  STATISTICAL
+  RECONCILIATION
+  ACCOUNTING_INTEGRITY
+  ANALYTICAL
+  DATA_QUALITY
+}
+
+enum AuditVersionStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
+enum AuditRunStatus {
+  DRAFT
+  PREPARING
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AuditPreparationStatus {
+  PREPARING
+  COMPLETE
+  FAILED
+  ABANDONED
+  PUBLISHED
+}
+
+enum AuditJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum AuditFailureCode {
+  INFRA
+  TRANSIENT
+  LEASE_LOST
+  VALIDATION
+  CONFIG
+  DETERMINISM
+  UNPINNED_DEPENDENCY
+}
+
+enum ScopeEligibility {
+  ELIGIBLE
+  PARTIALLY_ELIGIBLE
+  NOT_ELIGIBLE
+}
+
+enum ScopeMembershipMode {
+  DETERMINISTIC
+  MATERIALIZED
+}
+
+enum AuditEvidenceType {
+  IMPORTED_RECORD
+  JOURNAL_LINE
+  JOURNAL_ENTRY
+  TRIAL_BALANCE_ROW
+  DATASET
+}
+
+enum AuditReviewState {
+  OPEN
+  RESOLVED
+  DISMISSED
+  ESCALATED
+}
+
+// --- G4-owned client semantic key (C9; immutable, stable, non-PK) ------------
+
+model AuditClientSemanticKey {
+  id              String   @id @default(cuid())
+  auditFirmId     String
+  clientCompanyId String
+  semanticKey     String // G4-minted stable token; never a DB PK, never client-supplied at execution
+  assignedById    String?
+  assignedAt      DateTime @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, clientCompanyId])
+  @@unique([auditFirmId, semanticKey])
+  @@index([auditFirmId])
+  @@map("audit_client_semantic_keys")
+}
+
+// --- MUTABLE POINTER/MASTER --------------------------------------------------
+
+model AuditTest {
+  id               String        @id @default(cuid())
+  auditFirmId      String
+  key              String // firm-stable logical key (semantic identity; not the PK)
+  name             String
+  nameAr           String
+  testType         AuditTestType
+  currentVersionId String?
+  enabled          Boolean       @default(true)
+  createdById      String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, key])
+  @@index([auditFirmId])
+  @@map("audit_tests")
+}
+
+// --- IMMUTABLE VERSION -------------------------------------------------------
+
+model AuditTestVersion {
+  id                 String             @id @default(cuid())
+  auditFirmId        String
+  auditTestId        String
+  version            Int
+  testType           AuditTestType
+  definitionJson     Json
+  requirementsJson   Json
+  auditRuleVersionId String? // NOT NULL exactly when testType=RULE (CHECK in migration)
+  status             AuditVersionStatus @default(DRAFT)
+  versionHash        String // integrity attribute — NOT a firm-global uniqueness key
+  createdById        String?
+  createdAt          DateTime           @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditTestId, version])
+  @@index([auditFirmId])
+  @@index([auditTestId])
+  @@map("audit_test_versions")
+}
+
+model AuditRuleVersion {
+  id              String             @id @default(cuid())
+  auditFirmId     String
+  auditRuleId     String
+  version         Int
+  definitionJson  Json
+  thresholdsJson  Json?
+  severity        AnomalySeverity    @default(MEDIUM)
+  scopeJson       Json?
+  status          AuditVersionStatus @default(DRAFT)
+  ruleVersionHash String // integrity attribute — NOT a firm-global uniqueness key
+  createdById     String?
+  createdAt       DateTime           @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditRuleId, version])
+  @@index([auditFirmId])
+  @@index([auditRuleId])
+  @@map("audit_rule_versions")
+}
+
+// --- IMMUTABLE BUSINESS FACT / stateful header -------------------------------
+
+model AuditRun {
+  id                  String            @id @default(cuid())
+  auditFirmId         String
+  engagementId        String
+  clientCompanyId     String?
+  status              AuditRunStatus    @default(DRAFT)
+  // Frozen at atomic publish (§8); set-once, guarded by trigger.
+  engineBuildVersion  String?
+  configFingerprint   String?
+  freezeFormatVersion String?
+  frozenAt            DateTime?
+  freezeGeneration    String? // → exactly one authoritative AuditRunPreparation (composite FK)
+  maxAttempts         Int               @default(3)
+  failureCode         AuditFailureCode?
+  failureDetail       String?
+  supersedesRunId     String? // lineage only; never overwrite semantics
+  label               String?
+  createdById         String?
+  executedById        String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([auditFirmId, engagementId, status])
+  @@map("audit_runs")
+}
+
+// --- EXECUTION STATE: preparation generation ---------------------------------
+
+model AuditRunPreparation {
+  id                                 String                 @id @default(cuid())
+  auditFirmId                        String
+  runId                              String
+  generationNo                       Int
+  status                             AuditPreparationStatus @default(PREPARING)
+  pinnedVersionsJson                 Json?
+  engineBuildVersionCandidate        String?
+  expectedCountsJson                 Json?
+  eligiblePopulationFingerprintsJson Json?
+  preparationManifestHash            String?
+  startedAt                          DateTime               @default(now())
+  sealedAt                           DateTime?
+
+  @@unique([auditFirmId, id])
+  @@unique([runId, generationNo])
+  // Enables the AuditRun.freezeGeneration composite FK (same-run + same-firm proof).
+  @@unique([auditFirmId, runId, id])
+  @@index([auditFirmId])
+  @@index([runId])
+  @@map("audit_run_preparations")
+}
+
+model AuditRunPrepChunk {
+  id                 String   @id @default(cuid())
+  auditFirmId        String
+  preparationId      String
+  auditTestVersionId String
+  datasetId          String
+  lastSourceRowNo    Int?
+  cursorState        Json?
+  done               Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([preparationId, auditTestVersionId, datasetId])
+  @@index([auditFirmId])
+  @@map("audit_run_prep_chunks")
+}
+
+// --- IMMUTABLE BUSINESS FACT: generation-scoped run scope --------------------
+
+model AuditRunDataset {
+  id            String       @id @default(cuid())
+  auditFirmId   String
+  preparationId String
+  runId         String
+  datasetId     String
+  datasetHash   String? // reproducible content id (null only for legacy datasets)
+  datasetKind   DatasetKind
+  lineageClass  LineageClass
+  orderIndex    Int
+
+  @@unique([auditFirmId, id])
+  @@unique([preparationId, datasetId])
+  @@index([auditFirmId])
+  @@index([preparationId])
+  @@map("audit_run_datasets")
+}
+
+model AuditRunTestVersion {
+  id                      String        @id @default(cuid())
+  auditFirmId             String
+  preparationId           String
+  runId                   String
+  auditTestVersionId      String
+  testType                AuditTestType // denormalized for the RULE↔ruleVersion CHECK
+  auditRuleVersionId      String?
+  effectiveParametersJson Json
+  effectiveParametersHash String
+  orderIndex              Int
+
+  @@unique([auditFirmId, id])
+  @@unique([preparationId, auditTestVersionId])
+  @@index([auditFirmId])
+  @@index([preparationId])
+  @@map("audit_run_test_versions")
+}
+
+model AuditRunAccountMappingPin {
+  id                      String @id @default(cuid())
+  auditFirmId             String
+  preparationId           String
+  runId                   String
+  datasetAccountId        String
+  accountMappingVersionId String
+  mappingSemanticHash     String // G4-owned frozen dependency hash over immutable G3 fields
+
+  @@unique([auditFirmId, id])
+  @@unique([preparationId, datasetAccountId, accountMappingVersionId])
+  @@index([auditFirmId])
+  @@index([preparationId])
+  @@map("audit_run_account_mapping_pins")
+}
+
+model AuditRunScopeResolution {
+  id                            String              @id @default(cuid())
+  auditFirmId                   String
+  preparationId                 String
+  runId                         String
+  auditTestVersionId            String
+  datasetId                     String
+  eligibility                   ScopeEligibility
+  resolutionAlgorithmVersion    String
+  scopePredicateJson            Json?
+  scopePredicateHash            String?
+  unmetRequirementsJson         Json?
+  sourcePopulationCount         Int?
+  eligiblePopulationCount       Int?
+  eligiblePopulationFingerprint String?
+  membershipMode                ScopeMembershipMode
+
+  @@unique([auditFirmId, id])
+  @@unique([preparationId, auditTestVersionId, datasetId])
+  @@index([auditFirmId])
+  @@index([preparationId])
+  @@map("audit_run_scope_resolutions")
+}
+
+model AuditRunScopeMember {
+  id                 String            @id @default(cuid())
+  auditFirmId        String
+  preparationId      String
+  auditTestVersionId String
+  datasetId          String
+  sourceRowNo        Int // occurrence discriminator — distinguishes identical-content rows
+  evidenceType       AuditEvidenceType
+  eoiFrameHash       String
+  contentHash        String // integrity attribute — NOT the sole identity
+
+  @@unique([auditFirmId, id])
+  // Occurrence identity: two identical-content rows (equal contentHash) at
+  // different sourceRowNo are two distinct members.
+  @@unique([preparationId, auditTestVersionId, datasetId, sourceRowNo])
+  @@index([auditFirmId])
+  @@index([preparationId, auditTestVersionId, datasetId])
+  @@map("audit_run_scope_members")
+}
+
+// --- EXECUTION STATE: technical attempts -------------------------------------
+
+model AuditJob {
+  id             String            @id @default(cuid())
+  auditFirmId    String
+  runId          String
+  attemptNo      Int
+  status         AuditJobStatus    @default(RUNNING)
+  queuedAt       DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  heartbeatAt    DateTime?
+  failureCode    AuditFailureCode?
+  failureDetail  String?
+  createdAt      DateTime          @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([runId, attemptNo])
+  @@index([auditFirmId])
+  @@index([auditFirmId, status, leaseExpiresAt])
+  @@map("audit_jobs")
+}
+
+// --- IMMUTABLE BUSINESS FACT: raw results ------------------------------------
+
+model AuditResult {
+  id                          String          @id @default(cuid())
+  auditFirmId                 String
+  runId                       String
+  auditRunTestVersionId       String
+  resultKind                  String
+  resultCode                  String
+  severity                    AnomalySeverity
+  score                       Decimal         @db.Decimal(5, 2)
+  payloadJson                 Json
+  resultOccurrenceFingerprint String
+  resultSemanticFingerprint   String // NOT globally unique (cross-run comparison)
+  lineageClass                LineageClass    @default(VERIFIED)
+  createdAt                   DateTime        @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, runId, resultOccurrenceFingerprint])
+  @@index([auditFirmId])
+  @@index([auditFirmId, runId])
+  @@index([auditFirmId, runId, auditRunTestVersionId])
+  @@index([auditFirmId, resultSemanticFingerprint])
+  @@map("audit_results")
+}
+
+// --- TYPED EVIDENCE JOIN -----------------------------------------------------
+
+model AuditResultEvidence {
+  id                String            @id @default(cuid())
+  auditFirmId       String
+  auditResultId     String
+  evidenceType      AuditEvidenceType
+  role              String?
+  // Exactly one typed FK populated, matching evidenceType (CHECK in migration).
+  importedRecordId  String?
+  journalLineId     String?
+  journalEntryId    String?
+  trialBalanceRowId String?
+  datasetId         String?
+  // Occurrence identity fields (C7).
+  sourceRowNo       Int?
+  lineNo            Int?
+  sourceEntryId     String?
+  eoiFrameHash      String?
+
+  @@unique([auditFirmId, id])
+  @@index([auditFirmId])
+  @@index([auditFirmId, auditResultId])
+  @@index([auditFirmId, journalLineId])
+  @@index([auditFirmId, importedRecordId])
+  @@map("audit_result_evidence")
+}
+
+// --- REVIEW STATE (append-only) ----------------------------------------------
+
+model AuditResultReview {
+  id            String           @id @default(cuid())
+  auditFirmId   String
+  auditResultId String
+  reviewSeq     Int
+  state         AuditReviewState
+  reviewedById  String?
+  reviewedAt    DateTime         @default(now())
+  note          String?
+
+  @@unique([auditFirmId, id])
+  @@unique([auditResultId, reviewSeq])
+  @@index([auditFirmId])
+  @@index([auditFirmId, auditResultId])
+  @@map("audit_result_reviews")
 }
