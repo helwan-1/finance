@@ -1,26 +1,30 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import { requireSession } from "@/lib/auth/guard";
+import { demoAllowed } from "@/lib/security/env";
+import { withTenantContext } from "@/lib/db/tenant";
 import { DEMO_ENGAGEMENTS } from "@/lib/demo-data";
 import type { EngagementSummary } from "@/lib/ui-types";
 
 /**
  * GET /api/engagements — the caller's engagements (from the DB), so the UI runs
- * on real data. Without a session (public demo) it returns the demo list.
+ * on real data. Without a session the non-production demo list is served;
+ * production fails closed.
  */
 export async function GET(): Promise<NextResponse> {
   const session = await getSession();
   if (!session) {
-    return NextResponse.json({ engagements: DEMO_ENGAGEMENTS });
+    if (demoAllowed()) return NextResponse.json({ engagements: DEMO_ENGAGEMENTS });
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
   try {
-    const rows = await prisma.auditEngagement.findMany({
-      where: { auditFirmId: session.auditFirmId },
-      orderBy: [{ fiscalYear: "desc" }, { createdAt: "desc" }],
-      include: { clientCompany: { select: { nameAr: true } } },
-    });
+    const rows = await withTenantContext(session.auditFirmId, (tx) =>
+      tx.auditEngagement.findMany({
+        orderBy: [{ fiscalYear: "desc" }, { createdAt: "desc" }],
+        include: { clientCompany: { select: { nameAr: true } } },
+      }),
+    );
     const engagements: EngagementSummary[] = rows.map((e) => ({
       id: e.id,
       titleAr: e.titleAr,
@@ -29,7 +33,7 @@ export async function GET(): Promise<NextResponse> {
     }));
     return NextResponse.json({ engagements });
   } catch {
-    return NextResponse.json({ engagements: DEMO_ENGAGEMENTS });
+    return NextResponse.json({ error: "تعذّر تحميل المهام" }, { status: 503 });
   }
 }
 
@@ -44,13 +48,9 @@ interface CreateBody {
 
 /** POST /api/engagements — create a client + engagement (requires engagement:manage). */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!can(session.role, "engagement:manage")) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  const auth = await requireSession("engagement:manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   let body: CreateBody;
   try {
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     : new Date(Date.UTC(fiscalYear, 11, 31));
 
   try {
-    const engagement = await prisma.$transaction(async (tx) => {
+    const engagement = await withTenantContext(session.auditFirmId, async (tx) => {
       const client = await tx.clientCompany.create({
         data: {
           auditFirmId: session.auditFirmId,

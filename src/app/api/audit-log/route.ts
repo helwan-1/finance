@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { DEMO_AUDIT_LOGS } from "@/lib/demo-audit-log";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import type { AuditLogDTO, AuditLogResponse } from "@/lib/ui-types";
 
 /**
@@ -14,28 +14,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("auditlog:view", engagementId);
+  const authz = await authorize("auditlog:view");
   if (!authz.ok) return authz.response;
 
+  // Non-production demo path (no session).
+  if (!authz.session) {
+    return NextResponse.json<AuditLogResponse>({ logs: DEMO_AUDIT_LOGS });
+  }
+  if (!engagementId) {
+    return NextResponse.json<AuditLogResponse>({ logs: [] });
+  }
+
   try {
-    if (!engagementId) {
-      return NextResponse.json<AuditLogResponse>({ logs: DEMO_AUDIT_LOGS });
-    }
-
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) {
-      return NextResponse.json<AuditLogResponse>({ logs: DEMO_AUDIT_LOGS });
-    }
-
-    const rows = await prisma.auditLog.findMany({
-      where: { auditFirmId: engagement.auditFirmId, engagementId },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      include: { user: { select: { fullNameAr: true } } },
-    });
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.auditLog.findMany({
+        where: { engagementId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: { user: { select: { fullNameAr: true } } },
+      }),
+    );
 
     const logs: AuditLogDTO[] = rows.map((r) => ({
       id: r.id,
@@ -52,6 +50,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json<AuditLogResponse>({ logs });
   } catch {
-    return NextResponse.json<AuditLogResponse>({ logs: DEMO_AUDIT_LOGS });
+    return NextResponse.json({ error: "تعذّر تحميل السجل" }, { status: 503 });
   }
 }

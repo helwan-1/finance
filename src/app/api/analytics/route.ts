@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { analyzeBenford, CHI_SQUARE_CRITICAL_8DF } from "@/lib/audit/benford";
 import { DEMO_ANALYTICS } from "@/lib/demo-analytics";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import type { AnalyticsResponse } from "@/lib/ui-types";
 
 /**
@@ -14,29 +14,39 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("analytics:view", engagementId);
+  const authz = await authorize("analytics:view");
   if (!authz.ok) return authz.response;
 
+  // Non-production demo path (no session).
+  if (!authz.session) {
+    return NextResponse.json<AnalyticsResponse>(DEMO_ANALYTICS);
+  }
+  if (!engagementId) {
+    return NextResponse.json<AnalyticsResponse>({
+      sampleSize: 0,
+      chiSquare: 0,
+      criticalValue: CHI_SQUARE_CRITICAL_8DF,
+      rejectsBenford: false,
+      digits: [],
+    });
+  }
+
   try {
-    if (!engagementId) {
-      return NextResponse.json<AnalyticsResponse>(DEMO_ANALYTICS);
-    }
-
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) {
-      return NextResponse.json<AnalyticsResponse>(DEMO_ANALYTICS);
-    }
-
-    const rows = await prisma.transaction.findMany({
-      where: { auditFirmId: engagement.auditFirmId, engagementId },
-      select: { amount: true },
-    });
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.transaction.findMany({
+        where: { engagementId },
+        select: { amount: true },
+      }),
+    );
 
     if (rows.length === 0) {
-      return NextResponse.json<AnalyticsResponse>(DEMO_ANALYTICS);
+      return NextResponse.json<AnalyticsResponse>({
+        sampleSize: 0,
+        chiSquare: 0,
+        criticalValue: CHI_SQUARE_CRITICAL_8DF,
+        rejectsBenford: false,
+        digits: [],
+      });
     }
 
     const result = analyzeBenford(rows.map((r) => r.amount.toString()));
@@ -49,6 +59,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     };
     return NextResponse.json<AnalyticsResponse>(response);
   } catch {
-    return NextResponse.json<AnalyticsResponse>(DEMO_ANALYTICS);
+    return NextResponse.json({ error: "تعذّر تحميل التحليلات" }, { status: 503 });
   }
 }

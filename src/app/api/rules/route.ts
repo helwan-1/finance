@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { Prisma, RuleCategory } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { DEMO_RULES } from "@/lib/demo-rules";
-import { authorize } from "@/lib/auth/guard";
-import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import { authorize, requireSession } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import type { RuleDTO, RulesResponse } from "@/lib/ui-types";
 
 const CATEGORIES: RuleCategory[] = ["NUMERIC", "PARTY", "TIMING", "AGGREGATE"];
@@ -43,31 +41,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("rules:view", engagementId);
+  const authz = await authorize("rules:view");
   if (!authz.ok) return authz.response;
 
-  try {
-    if (!engagementId) {
-      return NextResponse.json<RulesResponse>({ rules: DEMO_RULES });
-    }
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) {
-      return NextResponse.json<RulesResponse>({ rules: DEMO_RULES });
-    }
+  // Non-production demo path (no session) → the starter library.
+  if (!authz.session) {
+    return NextResponse.json<RulesResponse>({ rules: DEMO_RULES });
+  }
 
-    const rows = await prisma.auditRule.findMany({
-      where: {
-        auditFirmId: engagement.auditFirmId,
-        OR: [{ engagementId: null }, { engagementId }],
-      },
-      orderBy: [{ category: "asc" }, { code: "asc" }],
-    });
+  try {
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.auditRule.findMany({
+        where: engagementId
+          ? { OR: [{ engagementId: null }, { engagementId }] }
+          : { engagementId: null },
+        orderBy: [{ category: "asc" }, { code: "asc" }],
+      }),
+    );
     return NextResponse.json<RulesResponse>({ rules: rows.map(toDTO) });
   } catch {
-    return NextResponse.json<RulesResponse>({ rules: DEMO_RULES });
+    return NextResponse.json({ error: "تعذّر تحميل القواعد" }, { status: 503 });
   }
 }
 
@@ -84,13 +77,9 @@ interface CreateBody {
 
 /** POST /api/rules — create a new rule (requires rules:manage). */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!can(session.role, "rules:manage")) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  const auth = await requireSession("rules:manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   let body: CreateBody;
   try {
@@ -109,35 +98,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  try {
-    // Engagement scope must belong to the caller's firm.
-    let engagementId: string | null = null;
-    if (body.scope === "ENGAGEMENT" && body.engagementId) {
-      const eng = await prisma.auditEngagement.findUnique({
-        where: { id: body.engagementId },
-        select: { auditFirmId: true },
-      });
-      if (!eng || eng.auditFirmId !== session.auditFirmId) {
-        return NextResponse.json({ error: "Invalid engagement" }, { status: 403 });
-      }
-      engagementId = body.engagementId;
-    }
+  const wantEngagement =
+    body.scope === "ENGAGEMENT" && body.engagementId ? body.engagementId : null;
 
-    const created = await prisma.auditRule.create({
-      data: {
-        auditFirmId: session.auditFirmId,
-        engagementId,
-        code,
-        name: code,
-        nameAr,
-        category,
-        severity: body.severity ?? "MEDIUM",
-        descriptionAr: body.descriptionAr ?? null,
-        definition: body.definition,
-        createdById: session.userId,
-      },
+  try {
+    const result = await withTenantContext(session.auditFirmId, async (tx) => {
+      let engagementId: string | null = null;
+      if (wantEngagement) {
+        // RLS makes a cross-tenant engagement invisible → treated as invalid.
+        const eng = await tx.auditEngagement.findUnique({
+          where: { id: wantEngagement },
+          select: { id: true },
+        });
+        if (!eng) return "invalid_engagement" as const;
+        engagementId = wantEngagement;
+      }
+      return tx.auditRule.create({
+        data: {
+          auditFirmId: session.auditFirmId,
+          engagementId,
+          code,
+          name: code,
+          nameAr,
+          category,
+          severity: body.severity ?? "MEDIUM",
+          descriptionAr: body.descriptionAr ?? null,
+          definition: body.definition!,
+          createdById: session.userId,
+        },
+      });
     });
-    return NextResponse.json(toDTO(created), { status: 201 });
+
+    if (result === "invalid_engagement") {
+      return NextResponse.json({ error: "Invalid engagement" }, { status: 403 });
+    }
+    return NextResponse.json(toDTO(result), { status: 201 });
   } catch {
     return NextResponse.json({ error: "تعذّر إنشاء القاعدة" }, { status: 503 });
   }

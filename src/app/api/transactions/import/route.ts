@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { TransactionSource, TransactionType } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import type { Prisma, TransactionSource, TransactionType } from "@prisma/client";
+import { requireSession } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import { readSpreadsheet } from "@/lib/tabular";
 import { recordAuditLog } from "@/lib/audit-log";
 import { publishAuditEvent } from "@/lib/events";
@@ -70,13 +69,9 @@ function canonicalize(row: Record<string, string>): Record<string, string> {
  * documents:upload permission.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!can(session.role, "documents:upload")) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  const auth = await requireSession("documents:upload");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   let form: FormData;
   try {
@@ -93,15 +88,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "engagementId is required" }, { status: 400 });
   }
 
-  const engagement = await prisma.auditEngagement.findUnique({
-    where: { id: engagementId },
-    select: { auditFirmId: true, currency: true },
-  });
+  // RLS makes a cross-tenant / unknown engagement invisible → not found.
+  const engagement = await withTenantContext(session.auditFirmId, (tx) =>
+    tx.auditEngagement.findUnique({
+      where: { id: engagementId },
+      select: { currency: true },
+    }),
+  );
   if (!engagement) {
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
-  }
-  if (engagement.auditFirmId !== session.auditFirmId) {
-    return NextResponse.json({ error: "Cross-tenant access denied" }, { status: 403 });
   }
 
   let rows: Record<string, string>[];
@@ -133,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const errors: string[] = [];
-  const data = [];
+  const data: Prisma.TransactionCreateManyInput[] = [];
   for (let i = 0; i < rows.length; i += 1) {
     const r = canonicalize(rows[i]!);
     const lineNo = i + 2;
@@ -144,7 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const postedAt = parseDate(r.postedAt ?? "");
     data.push({
-      auditFirmId: engagement.auditFirmId,
+      auditFirmId: session.auditFirmId,
       engagementId,
       reference: (r.reference ?? "").trim() || `TXN-${i + 1}`,
       description: (r.description ?? "").trim() || "—",
@@ -165,9 +160,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await prisma.transaction.createMany({ data });
+    const result = await withTenantContext(session.auditFirmId, (tx) =>
+      tx.transaction.createMany({ data }),
+    );
     await recordAuditLog({
-      auditFirmId: engagement.auditFirmId,
+      auditFirmId: session.auditFirmId,
       engagementId,
       userId: session.userId,
       action: "RUN_ANALYSIS",

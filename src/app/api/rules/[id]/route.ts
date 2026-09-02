@@ -1,29 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import { requireSession } from "@/lib/auth/guard";
+import { withTenantContext, type TenantTx } from "@/lib/db/tenant";
 
-async function requireManage() {
-  const session = await getSession();
-  if (!session) {
-    return { ok: false as const, res: NextResponse.json({ error: "Authentication required" }, { status: 401 }) };
-  }
-  if (!can(session.role, "rules:manage")) {
-    return { ok: false as const, res: NextResponse.json({ error: "Insufficient permissions" }, { status: 403 }) };
-  }
-  return { ok: true as const, session };
-}
-
-/** Verify the rule exists and belongs to the caller's firm. */
-async function ownedRule(id: string, auditFirmId: string) {
-  const rule = await prisma.auditRule.findUnique({
+/** Verify the rule exists in the caller's tenant (RLS-scoped). */
+async function ruleExists(tx: TenantTx, id: string): Promise<boolean> {
+  const rule = await tx.auditRule.findUnique({
     where: { id },
-    select: { auditFirmId: true },
+    select: { id: true },
   });
-  if (!rule) return "not_found" as const;
-  if (rule.auditFirmId !== auditFirmId) return "forbidden" as const;
-  return "ok" as const;
+  return rule !== null;
 }
 
 interface PatchBody {
@@ -38,8 +24,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const auth = await requireManage();
-  if (!auth.ok) return auth.res;
+  const auth = await requireSession("rules:manage");
+  if (!auth.ok) return auth.response;
 
   let body: PatchBody;
   try {
@@ -49,19 +35,22 @@ export async function PATCH(
   }
 
   try {
-    const status = await ownedRule(params.id, auth.session.auditFirmId);
-    if (status === "not_found") return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (status === "forbidden") return NextResponse.json({ error: "Cross-tenant access denied" }, { status: 403 });
-
-    await prisma.auditRule.update({
-      where: { id: params.id },
-      data: {
-        ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
-        ...(body.nameAr ? { nameAr: body.nameAr.trim() } : {}),
-        ...(body.severity ? { severity: body.severity as never } : {}),
-        ...(body.descriptionAr !== undefined ? { descriptionAr: body.descriptionAr } : {}),
-      },
+    const found = await withTenantContext(auth.session.auditFirmId, async (tx) => {
+      if (!(await ruleExists(tx, params.id))) return false;
+      await tx.auditRule.update({
+        where: { id: params.id },
+        data: {
+          ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+          ...(body.nameAr ? { nameAr: body.nameAr.trim() } : {}),
+          ...(body.severity ? { severity: body.severity as never } : {}),
+          ...(body.descriptionAr !== undefined
+            ? { descriptionAr: body.descriptionAr }
+            : {}),
+        },
+      });
+      return true;
     });
+    if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "تعذّر تحديث القاعدة" }, { status: 503 });
@@ -73,15 +62,16 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const auth = await requireManage();
-  if (!auth.ok) return auth.res;
+  const auth = await requireSession("rules:manage");
+  if (!auth.ok) return auth.response;
 
   try {
-    const status = await ownedRule(params.id, auth.session.auditFirmId);
-    if (status === "not_found") return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (status === "forbidden") return NextResponse.json({ error: "Cross-tenant access denied" }, { status: 403 });
-
-    await prisma.auditRule.delete({ where: { id: params.id } });
+    const found = await withTenantContext(auth.session.auditFirmId, async (tx) => {
+      if (!(await ruleExists(tx, params.id))) return false;
+      await tx.auditRule.delete({ where: { id: params.id } });
+      return true;
+    });
+    if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "تعذّر حذف القاعدة" }, { status: 503 });

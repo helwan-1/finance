@@ -1,58 +1,65 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSession, type SessionUser } from "./session";
 import { can, type Permission } from "./rbac";
+import { authEnforced } from "@/lib/security/env";
 
 /**
- * Authorize a data request.
+ * Authorization guards (G1 — fail-closed).
  *
- * Layers, in order:
- *   1. Authentication — a valid session. When AUTH_REQUIRED=true, a missing
- *      session is rejected (401). Otherwise the public demo is allowed through
- *      with a null session so the dashboard renders without login.
- *   2. RBAC — the session's role must hold `permission` (403 otherwise).
- *   3. Tenant isolation — an authenticated user may only touch an engagement
- *      that belongs to their own audit firm (403 otherwise).
+ * Two entry points:
+ *   * authorize()      — read paths. In production (or when AUTH_REQUIRED=true)
+ *                        a missing session is rejected (401). Only outside
+ *                        production may it fall through with a null session so
+ *                        the public in-memory demo renders.
+ *   * requireSession() — write / sensitive paths. A missing session is ALWAYS
+ *                        rejected (401) in every environment.
  *
- * Returns either a short-circuit `response` to return immediately, or `ok` with
- * the resolved session (null in demo mode).
+ * Tenant isolation is NOT performed here by querying the database. It is
+ * enforced at the data layer by PostgreSQL Row-Level Security combined with the
+ * per-transaction tenant context set in withTenantContext() (src/lib/db/tenant).
+ * A caller's audit firm always comes from the verified session, never from a
+ * client-supplied id.
  */
 export type AuthzResult =
   | { ok: true; session: SessionUser | null }
   | { ok: false; response: NextResponse };
 
-function deny(status: number, message: string): AuthzResult {
+export type SessionResult =
+  | { ok: true; session: SessionUser }
+  | { ok: false; response: NextResponse };
+
+function deny(status: number, message: string): { ok: false; response: NextResponse } {
   return { ok: false, response: NextResponse.json({ error: message }, { status }) };
 }
 
-export async function authorize(
-  permission: Permission,
-  engagementId?: string | null,
-): Promise<AuthzResult> {
+/** Read-path guard: enforced auth in production, demo fallthrough otherwise. */
+export async function authorize(permission: Permission): Promise<AuthzResult> {
   const session = await getSession();
 
   if (!session) {
-    if (process.env.AUTH_REQUIRED === "true") {
+    if (authEnforced()) {
       return deny(401, "Authentication required");
     }
-    // Demo mode: proceed without a session.
+    // Non-production demo mode only: proceed without a session.
     return { ok: true, session: null };
   }
 
   if (!can(session.role, permission)) {
     return deny(403, "Insufficient permissions");
   }
+  return { ok: true, session };
+}
 
-  // Tenant isolation: the engagement must belong to the caller's firm.
-  if (engagementId) {
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (engagement && engagement.auditFirmId !== session.auditFirmId) {
-      return deny(403, "Cross-tenant access denied");
-    }
+/** Write-path guard: a valid session is mandatory in every environment. */
+export async function requireSession(
+  permission: Permission,
+): Promise<SessionResult> {
+  const session = await getSession();
+  if (!session) {
+    return deny(401, "Authentication required");
   }
-
+  if (!can(session.role, permission)) {
+    return deny(403, "Insufficient permissions");
+  }
   return { ok: true, session };
 }

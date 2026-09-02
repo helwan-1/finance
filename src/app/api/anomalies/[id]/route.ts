@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { AnomalyStatus, AuditAction } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
+import { demoAllowed } from "@/lib/security/env";
+import { withTenantContext } from "@/lib/db/tenant";
 import { recordAuditLog } from "@/lib/audit-log";
 import { publishAuditEvent } from "@/lib/events";
 import type { AnomalyDTO } from "@/lib/ui-types";
@@ -53,15 +54,16 @@ export async function PATCH(
   const note = typeof body.note === "string" ? body.note.trim() : undefined;
   const session = await getSession();
 
-  // Demo mode: no session. When auth is required, reject; else acknowledge.
+  // Fail-closed: writes require a session. Only the non-production demo may
+  // echo a synthesized result (no database mutation) to stay interactive.
   if (!session) {
-    if (process.env.AUTH_REQUIRED === "true") {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 },
-      );
+    if (demoAllowed()) {
+      return NextResponse.json({ id: params.id, status: action.status });
     }
-    return NextResponse.json({ id: params.id, status: action.status });
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 },
+    );
   }
 
   if (!can(session.role, "anomalies:resolve")) {
@@ -72,35 +74,34 @@ export async function PATCH(
   }
 
   try {
-    const existing = await prisma.anomalyFlag.findUnique({
-      where: { id: params.id },
-      select: { auditFirmId: true, engagementId: true },
+    // Tenant scope is enforced by RLS: a cross-tenant id is simply invisible.
+    const result = await withTenantContext(session.auditFirmId, async (tx) => {
+      const existing = await tx.anomalyFlag.findUnique({
+        where: { id: params.id },
+        select: { engagementId: true },
+      });
+      if (!existing) return null;
+      const row = await tx.anomalyFlag.update({
+        where: { id: params.id },
+        data: {
+          status: action.status,
+          resolvedAt: new Date(),
+          resolvedById: session.userId,
+          resolutionNote: note ?? null,
+        },
+        include: {
+          transaction: {
+            select: { reference: true, amount: true, counterparty: true },
+          },
+        },
+      });
+      return { existing, updated: row };
     });
-    if (!existing) {
+
+    if (!result) {
       return NextResponse.json({ error: "Anomaly not found" }, { status: 404 });
     }
-    // Tenant isolation.
-    if (existing.auditFirmId !== session.auditFirmId) {
-      return NextResponse.json(
-        { error: "Cross-tenant access denied" },
-        { status: 403 },
-      );
-    }
-
-    const updated = await prisma.anomalyFlag.update({
-      where: { id: params.id },
-      data: {
-        status: action.status,
-        resolvedAt: new Date(),
-        resolvedById: session.userId,
-        resolutionNote: note ?? null,
-      },
-      include: {
-        transaction: {
-          select: { reference: true, amount: true, counterparty: true },
-        },
-      },
-    });
+    const { existing, updated } = result;
 
     await recordAuditLog({
       auditFirmId: session.auditFirmId,

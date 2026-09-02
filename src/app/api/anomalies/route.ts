@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { DEMO_ANOMALIES } from "@/lib/demo-data";
 import { filterAnomalies, parseFilters } from "@/lib/filter-anomalies";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import type { AnomaliesResponse, AnomalyDTO } from "@/lib/ui-types";
 
 /**
@@ -23,38 +23,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const filters = parseFilters(searchParams);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("anomalies:view", engagementId);
+  const authz = await authorize("anomalies:view");
   if (!authz.ok) return authz.response;
 
-  try {
-    if (!engagementId) {
-      // No engagement selected yet: serve the demo feed filtered client-side.
-      const anomalies = filterAnomalies(DEMO_ANOMALIES, filters);
-      return NextResponse.json<AnomaliesResponse>({
-        anomalies,
-        total: anomalies.length,
-      });
-    }
-
-    // Resolve the tenant from the engagement (would be the session in prod).
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
+  // Non-production demo path (no session): serve the in-memory feed.
+  if (!authz.session) {
+    const anomalies = filterAnomalies(DEMO_ANOMALIES, filters);
+    return NextResponse.json<AnomaliesResponse>({
+      anomalies,
+      total: anomalies.length,
     });
+  }
 
-    if (!engagement) {
-      // Unknown engagement id (e.g. the demo id): serve the demo feed,
-      // consistent with the other data routes.
-      const anomalies = filterAnomalies(DEMO_ANOMALIES, filters);
-      return NextResponse.json<AnomaliesResponse>({
-        anomalies,
-        total: anomalies.length,
-      });
-    }
+  // Authenticated: tenant comes from the session; RLS scopes every query.
+  if (!engagementId) {
+    return NextResponse.json<AnomaliesResponse>({ anomalies: [], total: 0 });
+  }
 
+  try {
     const where: Prisma.AnomalyFlagWhereInput = {
-      // Both tenant keys are always applied.
-      auditFirmId: engagement.auditFirmId,
       engagementId,
       ...(filters.severity !== "ALL" ? { severity: filters.severity } : {}),
       ...(filters.ruleCode !== "ALL" ? { ruleCode: filters.ruleCode } : {}),
@@ -91,16 +78,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         : {}),
     };
 
-    const rows = await prisma.anomalyFlag.findMany({
-      where,
-      orderBy: [{ score: "desc" }, { detectedAt: "desc" }],
-      take: 200,
-      include: {
-        transaction: {
-          select: { reference: true, amount: true, counterparty: true },
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.anomalyFlag.findMany({
+        where,
+        orderBy: [{ score: "desc" }, { detectedAt: "desc" }],
+        take: 200,
+        include: {
+          transaction: {
+            select: { reference: true, amount: true, counterparty: true },
+          },
         },
-      },
-    });
+      }),
+    );
 
     const anomalies: AnomalyDTO[] = rows.map((r) => ({
       id: r.id,
@@ -123,11 +112,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       total: anomalies.length,
     });
   } catch {
-    // Database unavailable — serve filtered demo data so the UI works.
-    const anomalies = filterAnomalies(DEMO_ANOMALIES, filters);
-    return NextResponse.json<AnomaliesResponse>({
-      anomalies,
-      total: anomalies.length,
-    });
+    // Authenticated request against a real tenant: do not fall back to demo.
+    return NextResponse.json(
+      { error: "تعذّر تحميل البيانات" },
+      { status: 503 },
+    );
   }
 }

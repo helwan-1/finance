@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import { requireSession } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import { recordAuditLog } from "@/lib/audit-log";
 import { publishAuditEvent } from "@/lib/events";
 import { evaluateRules } from "@/lib/rules/engine";
@@ -27,110 +26,103 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!can(session.role, "rules:run")) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  const auth = await requireSession("rules:run");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
   if (!engagementId) {
     return NextResponse.json({ error: "engagementId is required" }, { status: 400 });
   }
 
   try {
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) {
-      return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
-    }
-    if (engagement.auditFirmId !== session.auditFirmId) {
-      return NextResponse.json({ error: "Cross-tenant access denied" }, { status: 403 });
-    }
-
-    const [ruleRows, txns] = await Promise.all([
-      prisma.auditRule.findMany({
-        where: {
-          auditFirmId: engagement.auditFirmId,
-          enabled: true,
-          OR: [{ engagementId: null }, { engagementId }],
-        },
-      }),
-      prisma.transaction.findMany({
-        where: { auditFirmId: engagement.auditFirmId, engagementId },
-      }),
-    ]);
-
-    const rules: AuditRuleSpec[] = ruleRows.map((r) => ({
-      id: r.id,
-      code: r.code,
-      nameAr: r.nameAr,
-      category: r.category,
-      severity: r.severity,
-      definition: r.definition as unknown as RuleDefinition,
-    }));
-
-    const records: RuleRecord[] = txns.map((t) => ({
-      id: t.id,
-      reference: t.reference,
-      description: t.description,
-      amount: t.amount.toString(),
-      vatAmount: t.vatAmount ? t.vatAmount.toString() : null,
-      counterparty: t.counterparty,
-      account: t.account,
-      postedAt: t.postedAt.toISOString(),
-      valueDate: t.valueDate.toISOString(),
-      hasDocument: t.documentId !== null,
-    }));
-
-    const findings = evaluateRules(records, rules);
-
-    // Replace previous auto-generated, still-open rule findings so re-runs are
-    // idempotent (never touch resolved/dismissed ones).
-    await prisma.anomalyFlag.deleteMany({
-      where: { engagementId, ruleCode: "CUSTOM_RULE", status: "OPEN" },
-    });
-
-    for (const f of findings) {
-      await prisma.anomalyFlag.create({
-        data: {
-          auditFirmId: engagement.auditFirmId,
-          engagementId,
-          transactionId: f.transactionIds[0] ?? null,
-          auditRuleId: f.ruleId,
-          ruleCode: "CUSTOM_RULE",
-          severity: f.severity,
-          status: "OPEN",
-          title: f.code,
-          titleAr: f.titleAr,
-          description: f.descriptionAr,
-          descriptionAr: f.descriptionAr,
-          score: SEVERITY_SCORE[f.severity].toFixed(2),
-          evidence: { code: f.code, category: f.category, ...f.evidence } as object,
-        },
+    const outcome = await withTenantContext(session.auditFirmId, async (tx) => {
+      // RLS makes a cross-tenant / unknown engagement invisible → not found.
+      const engagement = await tx.auditEngagement.findUnique({
+        where: { id: engagementId },
+        select: { id: true },
       });
+      if (!engagement) return null;
+
+      const [ruleRows, txns] = await Promise.all([
+        tx.auditRule.findMany({
+          where: { enabled: true, OR: [{ engagementId: null }, { engagementId }] },
+        }),
+        tx.transaction.findMany({ where: { engagementId } }),
+      ]);
+
+      const rules: AuditRuleSpec[] = ruleRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        nameAr: r.nameAr,
+        category: r.category,
+        severity: r.severity,
+        definition: r.definition as unknown as RuleDefinition,
+      }));
+
+      const records: RuleRecord[] = txns.map((t) => ({
+        id: t.id,
+        reference: t.reference,
+        description: t.description,
+        amount: t.amount.toString(),
+        vatAmount: t.vatAmount ? t.vatAmount.toString() : null,
+        counterparty: t.counterparty,
+        account: t.account,
+        postedAt: t.postedAt.toISOString(),
+        valueDate: t.valueDate.toISOString(),
+        hasDocument: t.documentId !== null,
+      }));
+
+      const findings = evaluateRules(records, rules);
+
+      // Replace previous auto-generated, still-open rule findings so re-runs are
+      // idempotent (never touch resolved/dismissed ones).
+      await tx.anomalyFlag.deleteMany({
+        where: { engagementId, ruleCode: "CUSTOM_RULE", status: "OPEN" },
+      });
+
+      for (const f of findings) {
+        await tx.anomalyFlag.create({
+          data: {
+            auditFirmId: session.auditFirmId,
+            engagementId,
+            transactionId: f.transactionIds[0] ?? null,
+            auditRuleId: f.ruleId,
+            ruleCode: "CUSTOM_RULE",
+            severity: f.severity,
+            status: "OPEN",
+            title: f.code,
+            titleAr: f.titleAr,
+            description: f.descriptionAr,
+            descriptionAr: f.descriptionAr,
+            score: SEVERITY_SCORE[f.severity].toFixed(2),
+            evidence: { code: f.code, category: f.category, ...f.evidence } as object,
+          },
+        });
+      }
+      return { evaluated: rules.length, findings: findings.length };
+    });
+
+    if (!outcome) {
+      return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
     }
 
     await recordAuditLog({
-      auditFirmId: engagement.auditFirmId,
+      auditFirmId: session.auditFirmId,
       engagementId,
       userId: session.userId,
       action: "RUN_ANALYSIS",
       entityType: "AuditRule",
-      metadata: { rules: rules.length, findings: findings.length },
+      metadata: { rules: outcome.evaluated, findings: outcome.findings },
     });
 
     publishAuditEvent({
       type: "anomaly.created",
       engagementId,
-      payload: { source: "rules", findings: findings.length },
+      payload: { source: "rules", findings: outcome.findings },
     });
 
     return NextResponse.json<RunRulesResponse>({
-      evaluated: rules.length,
-      findings: findings.length,
+      evaluated: outcome.evaluated,
+      findings: outcome.findings,
     });
   } catch {
     return NextResponse.json({ error: "تعذّر تشغيل التدقيق" }, { status: 503 });

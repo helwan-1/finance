@@ -16,7 +16,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId") ?? "";
 
-  const authz = await authorize("anomalies:view", engagementId || undefined);
+  const authz = await authorize("anomalies:view");
   if (!authz.ok) return authz.response;
 
   const encoder = new TextEncoder();

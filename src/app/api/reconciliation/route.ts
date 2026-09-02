@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { DEMO_RECON_SESSIONS } from "@/lib/demo-reconciliation";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import type {
   ReconMatchDTO,
   ReconSessionDTO,
@@ -19,41 +19,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("reconciliation:view", engagementId);
+  const authz = await authorize("reconciliation:view");
   if (!authz.ok) return authz.response;
 
-  try {
-    if (!engagementId) {
-      return NextResponse.json<ReconciliationResponse>({
-        sessions: DEMO_RECON_SESSIONS,
-      });
-    }
-
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
+  // Non-production demo path (no session).
+  if (!authz.session) {
+    return NextResponse.json<ReconciliationResponse>({
+      sessions: DEMO_RECON_SESSIONS,
     });
+  }
+  if (!engagementId) {
+    return NextResponse.json<ReconciliationResponse>({ sessions: [] });
+  }
 
-    if (!engagement) {
-      // Unknown engagement id (e.g. the demo id): serve the demo session.
-      return NextResponse.json<ReconciliationResponse>({
-        sessions: DEMO_RECON_SESSIONS,
-      });
-    }
-
-    const rows = await prisma.reconciliationSession.findMany({
-      where: { auditFirmId: engagement.auditFirmId, engagementId },
-      orderBy: { createdAt: "desc" },
-      include: {
-        matches: {
-          orderBy: { status: "asc" },
-          include: {
-            sourceTxn: { select: { reference: true, amount: true } },
-            targetTxn: { select: { reference: true } },
+  try {
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.reconciliationSession.findMany({
+        where: { engagementId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          matches: {
+            orderBy: { status: "asc" },
+            include: {
+              sourceTxn: { select: { reference: true, amount: true } },
+              targetTxn: { select: { reference: true } },
+            },
           },
         },
-      },
-    });
+      }),
+    );
 
     const sessions: ReconSessionDTO[] = rows.map((s) => {
       const matches: ReconMatchDTO[] = s.matches.map((m) => ({
@@ -85,8 +79,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json<ReconciliationResponse>({ sessions });
   } catch {
-    return NextResponse.json<ReconciliationResponse>({
-      sessions: DEMO_RECON_SESSIONS,
-    });
+    return NextResponse.json({ error: "تعذّر تحميل المطابقات" }, { status: 503 });
   }
 }

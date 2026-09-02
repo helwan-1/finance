@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { Prisma, RuleCategory } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth/session";
-import { can } from "@/lib/auth/rbac";
+import { requireSession } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import { readSpreadsheet } from "@/lib/tabular";
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
@@ -33,13 +32,9 @@ interface ImportResult {
  * definition.type. Requires rules:manage.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!can(session.role, "rules:manage")) {
-    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-  }
+  const auth = await requireSession("rules:manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   let form: FormData;
   try {
@@ -97,7 +92,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const scope = (row.scope ?? "FIRM").toUpperCase();
 
     try {
-      await prisma.auditRule.create({
+      await withTenantContext(session.auditFirmId, (tx) =>
+        tx.auditRule.create({
         data: {
           auditFirmId: session.auditFirmId,
           engagementId: scope === "ENGAGEMENT" ? engagementId : null,
@@ -109,7 +105,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           descriptionAr: row.descriptionAr?.trim() || null,
           definition: definition as unknown as Prisma.InputJsonValue,
         },
-      });
+        }),
+      );
       result.created += 1;
     } catch {
       result.skipped += 1;

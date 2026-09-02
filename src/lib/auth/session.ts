@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import type { UserRole } from "@prisma/client";
+import { getSessionSecret } from "@/lib/security/env";
 
 /**
  * Stateless session handling via a signed JWT stored in an httpOnly cookie.
@@ -21,13 +22,8 @@ export interface SessionUser {
 }
 
 function secretKey(): Uint8Array {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error(
-      "AUTH_SECRET must be set (>= 16 chars) to sign/verify sessions.",
-    );
-  }
-  return new TextEncoder().encode(secret);
+  // Centralized validation (length + production strength) lives in security/env.
+  return new TextEncoder().encode(getSessionSecret());
 }
 
 /** Create a signed session token for a user. */

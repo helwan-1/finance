@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { DEMO_DOCUMENTS } from "@/lib/demo-documents";
 import { getParser } from "@/lib/ocr";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import { publishAuditEvent } from "@/lib/events";
 import type {
   DocumentDTO,
@@ -26,31 +26,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const engagementId = searchParams.get("engagementId");
 
-  const authz = await authorize("documents:view", engagementId);
+  const authz = await authorize("documents:view");
   if (!authz.ok) return authz.response;
 
+  // Non-production demo path (no session).
+  if (!authz.session) {
+    return NextResponse.json<DocumentsResponse>({ documents: DEMO_DOCUMENTS });
+  }
+  if (!engagementId) {
+    return NextResponse.json<DocumentsResponse>({ documents: [] });
+  }
+
   try {
-    if (!engagementId) {
-      return NextResponse.json<DocumentsResponse>({
-        documents: DEMO_DOCUMENTS,
-      });
-    }
-
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) {
-      return NextResponse.json<DocumentsResponse>({
-        documents: DEMO_DOCUMENTS,
-      });
-    }
-
-    const rows = await prisma.document.findMany({
-      where: { auditFirmId: engagement.auditFirmId, engagementId },
-      orderBy: { uploadedAt: "desc" },
-      include: { _count: { select: { transactions: true } } },
-    });
+    const rows = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.document.findMany({
+        where: { engagementId },
+        orderBy: { uploadedAt: "desc" },
+        include: { _count: { select: { transactions: true } } },
+      }),
+    );
 
     const documents: DocumentDTO[] = rows.map((d) => ({
       id: d.id,
@@ -67,20 +61,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json<DocumentsResponse>({ documents });
   } catch {
-    return NextResponse.json<DocumentsResponse>({ documents: DEMO_DOCUMENTS });
+    return NextResponse.json({ error: "تعذّر تحميل المستندات" }, { status: 503 });
   }
 }
 
 /**
  * POST /api/documents — register an uploaded document and run the OCR parser.
  *
- * Accepts multipart/form-data with `file`, `engagementId`, and `type`. The file
- * bytes are handed to the active parser (Claude when configured, else the stub)
- * and, when a database is available, the document plus its extracted
- * transactions are persisted in a single Prisma transaction. In production the
- * bytes would additionally be streamed to object storage.
+ * Fail-closed in production (a session is required). The non-production demo
+ * returns a synthesized parsed document without touching the database. When
+ * authenticated, the document and its extracted transactions are persisted
+ * inside the caller's tenant context (RLS-scoped) in one transaction.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const authz = await authorize("documents:upload");
+  if (!authz.ok) return authz.response;
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -103,9 +99,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ? (rawType as DocumentType)
       : "OTHER";
 
-  const authz = await authorize("documents:upload", engagementId);
-  if (!authz.ok) return authz.response;
-
   const fileName = file.name;
   const mimeType = file.type || "application/octet-stream";
   const sizeBytes = file.size;
@@ -120,33 +113,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     contentBase64,
   });
 
+  const synthesized = (): DocumentDTO => ({
+    id: `doc-${Date.now()}`,
+    type,
+    status: "PARSED",
+    fileName,
+    mimeType,
+    sizeBytes,
+    pageCount: parsed.pageCount,
+    uploadedAt: new Date().toISOString(),
+    parsedAt: new Date().toISOString(),
+    extractedCount: parsed.lines.length,
+  });
+
+  // Demo path (non-production, no session): no persistence.
+  if (!authz.session) {
+    return NextResponse.json({ document: synthesized() }, { status: 201 });
+  }
+  if (!engagementId) {
+    return NextResponse.json({ error: "engagementId is required" }, { status: 400 });
+  }
+
   try {
-    const engagement = engagementId
-      ? await prisma.auditEngagement.findUnique({
-          where: { id: engagementId },
-          select: { id: true, auditFirmId: true },
-        })
-      : null;
+    const created = await withTenantContext(authz.session.auditFirmId, async (tx) => {
+      // RLS makes a cross-tenant / unknown engagement invisible → not found.
+      const engagement = await tx.auditEngagement.findUnique({
+        where: { id: engagementId },
+        select: { id: true, auditFirmId: true },
+      });
+      if (!engagement) return null;
 
-    if (!engagement) {
-      // No DB / unknown engagement: return a synthesized parsed document.
-      const dto: DocumentDTO = {
-        id: `doc-${Date.now()}`,
-        type,
-        status: "PARSED",
-        fileName,
-        mimeType,
-        sizeBytes,
-        pageCount: parsed.pageCount,
-        uploadedAt: new Date().toISOString(),
-        parsedAt: new Date().toISOString(),
-        extractedCount: parsed.lines.length,
-      };
-      return NextResponse.json({ document: dto }, { status: 201 });
-    }
-
-    // Persist the document + extracted transactions in one transaction.
-    const created = await prisma.$transaction(async (tx) => {
       const doc = await tx.document.create({
         data: {
           auditFirmId: engagement.auditFirmId,
@@ -182,13 +178,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
         });
       }
-
       return doc;
     });
 
+    if (!created) {
+      return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
+    }
+
     publishAuditEvent({
       type: "document.created",
-      engagementId: engagement.id,
+      engagementId,
       payload: { id: created.id, extracted: parsed.lines.length },
     });
 
@@ -206,19 +205,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
     return NextResponse.json({ document: dto }, { status: 201 });
   } catch {
-    // DB error: still return the parsed result so the UI can proceed.
-    const dto: DocumentDTO = {
-      id: `doc-${Date.now()}`,
-      type,
-      status: "PARSED",
-      fileName,
-      mimeType,
-      sizeBytes,
-      pageCount: parsed.pageCount,
-      uploadedAt: new Date().toISOString(),
-      parsedAt: new Date().toISOString(),
-      extractedCount: parsed.lines.length,
-    };
-    return NextResponse.json({ document: dto }, { status: 201 });
+    return NextResponse.json({ error: "تعذّر حفظ المستند" }, { status: 503 });
   }
 }

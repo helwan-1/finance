@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
-import { prisma } from "@/lib/prisma";
 import { DEMO_ANOMALIES } from "@/lib/demo-data";
 import { filterAnomalies, parseFilters } from "@/lib/filter-anomalies";
 import { authorize } from "@/lib/auth/guard";
+import { withTenantContext } from "@/lib/db/tenant";
 import { recordAuditLog } from "@/lib/audit-log";
 import {
   RULE_LABELS_AR,
@@ -14,26 +14,24 @@ import {
 import { formatDateTime } from "@/lib/format";
 import type { AnomalyDTO } from "@/lib/ui-types";
 
-/** Load anomalies for the engagement (DB, falling back to demo). */
-async function loadAnomalies(engagementId: string | null): Promise<AnomalyDTO[]> {
-  if (!engagementId) return DEMO_ANOMALIES;
-  try {
-    const engagement = await prisma.auditEngagement.findUnique({
-      where: { id: engagementId },
-      select: { auditFirmId: true },
-    });
-    if (!engagement) return DEMO_ANOMALIES;
-
-    const rows = await prisma.anomalyFlag.findMany({
-      where: { auditFirmId: engagement.auditFirmId, engagementId },
+/** Load anomalies for the engagement within the caller's tenant context. */
+async function loadAnomalies(
+  auditFirmId: string,
+  engagementId: string | null,
+): Promise<AnomalyDTO[]> {
+  if (!engagementId) return [];
+  const rows = await withTenantContext(auditFirmId, (tx) =>
+    tx.anomalyFlag.findMany({
+      where: { engagementId },
       orderBy: [{ score: "desc" }, { detectedAt: "desc" }],
       include: {
         transaction: {
           select: { reference: true, amount: true, counterparty: true },
         },
       },
-    });
-    return rows.map((r) => ({
+    }),
+  );
+  return rows.map((r) => ({
       id: r.id,
       ruleCode: r.ruleCode,
       severity: r.severity,
@@ -48,9 +46,6 @@ async function loadAnomalies(engagementId: string | null): Promise<AnomalyDTO[]>
       amount: r.transaction?.amount.toString() ?? null,
       counterparty: r.transaction?.counterparty ?? null,
     }));
-  } catch {
-    return DEMO_ANOMALIES;
-  }
 }
 
 /**
@@ -63,10 +58,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const engagementId = searchParams.get("engagementId");
   const filters = parseFilters(searchParams);
 
-  const authz = await authorize("data:export", engagementId);
+  const authz = await authorize("data:export");
   if (!authz.ok) return authz.response;
 
-  const anomalies = filterAnomalies(await loadAnomalies(engagementId), filters);
+  // Non-production demo export uses the in-memory feed; authenticated exports
+  // load the caller's tenant data via RLS.
+  const source = authz.session
+    ? await loadAnomalies(authz.session.auditFirmId, engagementId)
+    : DEMO_ANOMALIES;
+  const anomalies = filterAnomalies(source, filters);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Financial Audit Dashboard";

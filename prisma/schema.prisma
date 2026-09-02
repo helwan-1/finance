@@ -15,7 +15,13 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime connection: the NON-owner `audit_app` role, which is subject to
+  // Row-Level Security (tenant isolation). See migration *_g1_security_rls.
+  url       = env("DATABASE_URL")
+  // Migrations/introspection connect as the schema owner (bypasses RLS) so
+  // provisioning and the first-firm insert work. For local single-role dev,
+  // point both at the same URL.
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ----------------------------------------------------------------------------
