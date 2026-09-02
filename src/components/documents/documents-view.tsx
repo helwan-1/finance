@@ -19,6 +19,7 @@ import {
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { UploadButton } from "./upload-button";
 import { ImportTransactions } from "./import-transactions";
+import { DocumentActions } from "./document-actions";
 
 async function fetchDocuments(
   engagementId: string,
@@ -119,6 +120,10 @@ function DocumentCard({
             {doc.extractedCount} حركة مستخرجة
           </span>
         )}
+      </div>
+
+      <div className="flex items-center justify-end border-t pt-2">
+        <DocumentActions doc={doc} />
       </div>
     </article>
   );

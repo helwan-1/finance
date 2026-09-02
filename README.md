@@ -188,8 +188,15 @@ matches, and 7 anomaly flags across the seeded engagement.
 The most accurate way to load real data is **`POST /api/transactions/import`** — a
 CSV/Excel ledger import (button on the Documents page; `/api/transactions/template`
 gives a ready-to-fill Arabic template). Values are stored **exactly as entered**
-(no OCR guessing): it accepts English or Arabic headers, and normalizes amounts
-with thousands separators or Arabic-Indic digits. Document upload (OCR) is the
+(no OCR guessing). It accepts:
+- **`.xlsx` (Excel) directly** or `.csv` (via `readSpreadsheet` / ExcelJS);
+- CSVs delimited by **comma, semicolon, or tab** (auto-detected — Arabic/locale
+  Excel often uses `;`), with a UTF-8 BOM stripped;
+- **English or Arabic headers**, and amounts with thousands separators or
+  Arabic-Indic digits.
+When no amount column is recognized it returns the headers it read, so the
+mismatch is obvious. Uploaded documents can be **renamed / retyped / deleted**
+(`PATCH`/`DELETE /api/documents/:id`; delete also removes the extracted rows). Document upload (OCR) is the
 alternative and needs `ANTHROPIC_API_KEY` for real extraction; without it the
 stub parser fills placeholder values.
 

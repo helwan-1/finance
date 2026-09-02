@@ -3,11 +3,16 @@
  * escaped quotes, and CRLF). Returns an array of row objects keyed by the
  * header row. Good enough for importing rule/config files exported from Excel.
  */
-export function parseCsv(text: string): Record<string, string>[] {
+export function parseCsv(
+  text: string,
+  delimiter = ",",
+): Record<string, string>[] {
   const rows: string[][] = [];
   let field = "";
   let row: string[] = [];
   let inQuotes = false;
+  // Strip a leading UTF-8 BOM if present (Excel adds one).
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
@@ -26,7 +31,7 @@ export function parseCsv(text: string): Record<string, string>[] {
     }
     if (ch === '"') {
       inQuotes = true;
-    } else if (ch === ",") {
+    } else if (ch === delimiter) {
       row.push(field);
       field = "";
     } else if (ch === "\n") {

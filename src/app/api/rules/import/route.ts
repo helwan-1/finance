@@ -4,7 +4,7 @@ import type { Prisma, RuleCategory } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import { parseCsv } from "@/lib/csv";
+import { readSpreadsheet } from "@/lib/tabular";
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
 
@@ -53,8 +53,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const engagementId = (form.get("engagementId") as string | null)?.trim() || null;
 
-  const text = await file.text();
-  const rows = parseCsv(text);
+  let rows: Record<string, string>[];
+  try {
+    rows = await readSpreadsheet(file);
+  } catch {
+    return NextResponse.json({ error: "تعذّر قراءة الملف" }, { status: 400 });
+  }
   if (rows.length === 0) {
     return NextResponse.json({ error: "الملف فارغ أو غير صالح" }, { status: 400 });
   }

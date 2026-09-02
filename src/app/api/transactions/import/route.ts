@@ -4,7 +4,7 @@ import type { TransactionSource, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import { parseCsv } from "@/lib/csv";
+import { readSpreadsheet } from "@/lib/tabular";
 import { recordAuditLog } from "@/lib/audit-log";
 import { publishAuditEvent } from "@/lib/events";
 
@@ -104,9 +104,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Cross-tenant access denied" }, { status: 403 });
   }
 
-  const rows = parseCsv(await file.text());
+  let rows: Record<string, string>[];
+  try {
+    rows = await readSpreadsheet(file);
+  } catch {
+    return NextResponse.json(
+      { error: "تعذّر قراءة الملف — تأكد أنه CSV أو Excel صالح." },
+      { status: 400 },
+    );
+  }
   if (rows.length === 0) {
-    return NextResponse.json({ error: "الملف فارغ أو غير صالح" }, { status: 400 });
+    return NextResponse.json({ error: "الملف فارغ أو لا يحتوي صفوفاً." }, { status: 400 });
+  }
+
+  // If no row yields a recognized amount, the headers are likely unmapped.
+  const foundHeaders = Object.keys(rows[0] ?? {});
+  const anyAmount = rows.some((r) => {
+    const c = canonicalize(r);
+    return normalizeAmount(c.amount ?? "") !== null;
+  });
+  if (!anyAmount) {
+    return NextResponse.json(
+      {
+        error: `لم يُعثر على عمود «المبلغ». الأعمدة المقروءة: ${foundHeaders.join("، ") || "لا شيء"}. استخدم القالب أو سمِّ عمود المبلغ «amount» أو «المبلغ».`,
+      },
+      { status: 400 },
+    );
   }
 
   const errors: string[] = [];
