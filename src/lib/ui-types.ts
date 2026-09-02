@@ -189,3 +189,22 @@ export interface RunRulesResponse {
   evaluated: number;
   findings: number;
 }
+
+// ---- Settings ----
+
+export interface FirmSettings {
+  vatRatePct: number;
+  businessStartHour: number;
+  businessEndHour: number;
+  weekendDays: number[];
+  timeZone: string;
+}
+
+export interface SettingsResponse {
+  firmNameAr: string;
+  licenseNo: string;
+  userNameAr: string | null;
+  role: string | null;
+  canEdit: boolean;
+  settings: FirmSettings;
+}

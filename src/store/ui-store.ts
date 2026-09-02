@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { AnomalyFilters } from "@/lib/ui-types";
-import { DEMO_ENGAGEMENTS } from "@/lib/demo-data";
 
 /** Default (empty) filter state for the anomalies feed. */
 export const EMPTY_FILTERS: AnomalyFilters = {
@@ -24,7 +23,8 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  engagementId: DEMO_ENGAGEMENTS[0]?.id ?? "",
+  // Empty until real engagements load from the DB (see EngagementSwitcher).
+  engagementId: "",
   sidebarOpen: true,
   filters: EMPTY_FILTERS,
   setEngagement: (id) => set({ engagementId: id }),

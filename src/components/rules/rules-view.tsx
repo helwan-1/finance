@@ -11,6 +11,7 @@ import {
   SEVERITY_LABELS_AR,
 } from "@/lib/labels";
 import { AddRuleForm } from "./add-rule-form";
+import { ImportRules } from "./import-rules";
 
 async function fetchRules(engagementId: string): Promise<RulesResponse> {
   const p = new URLSearchParams();
@@ -78,7 +79,8 @@ export function RulesView() {
         <p className="text-sm text-[rgb(var(--muted))]">
           {data ? `${data.rules.length} قاعدة` : " "}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ImportRules />
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}

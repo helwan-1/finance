@@ -140,6 +140,8 @@ model AuditFirm {
   name         String
   nameAr       String // Arabic display name
   licenseNo    String   @unique
+  // Firm-level audit configuration (VAT rate, business hours, weekend, ...).
+  settings     Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

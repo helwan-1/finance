@@ -36,6 +36,9 @@ src/
     documents/page.tsx       # Document upload + OCR extraction
     reconciliation/page.tsx  # Reconciliation results page
     analytics/page.tsx       # Benford's Law analytics
+    anomalies/page.tsx       # Dedicated anomalies feed + export
+    rules/page.tsx           # Audit rules engine (define / import / run)
+    settings/page.tsx        # Firm profile + audit parameters
     audit-log/page.tsx       # Immutable audit trail
     globals.css
     api/anomalies/route.ts       # Filtered, tenant-scoped anomalies API
@@ -180,8 +183,15 @@ The committed initial migration (`prisma/migrations/*_init`) has been applied an
 seeded against a real PostgreSQL 16 instance: 134 transactions, 7 reconciliation
 matches, and 7 anomaly flags across the seeded engagement.
 
-The dashboard renders even **without** a database: the anomalies API falls back
-to an in-memory demo dataset (`src/lib/demo-data.ts`).
+### Real data vs. demo
+
+The dashboard renders even **without** a database using in-memory demo datasets.
+Once you log in (`AUTH_REQUIRED=true`), the **engagement switcher loads your real
+engagements from the DB** (`GET /api/engagements`) and every view is scoped to
+the selected one — nothing is stored in the browser. Create a fresh client +
+engagement from the switcher, then load real data by uploading documents. Rules
+can be defined in the UI or **imported from CSV** (`/api/rules/template` gives a
+ready-to-fill file). Firm-level audit parameters live under **Settings**.
 
 ### Tests
 
