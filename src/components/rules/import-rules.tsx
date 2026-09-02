@@ -1,0 +1,70 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Upload, Download, Loader2 } from "lucide-react";
+import { useUIStore } from "@/store/ui-store";
+
+interface ImportResult {
+  created: number;
+  skipped: number;
+  errors: string[];
+}
+
+/** Import rules from a CSV file, and download a ready-to-fill template. */
+export function ImportRules() {
+  const engagementId = useUIStore((s) => s.engagementId);
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("engagementId", engagementId);
+      const res = await fetch("/api/rules/import", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as ImportResult & { error?: string };
+      if (!res.ok && !data.created) throw new Error(data.error ?? "فشل الاستيراد");
+      return data;
+    },
+    onSuccess: (r) => {
+      setMsg(`تم استيراد ${r.created} قاعدة${r.skipped ? ` — تم تخطّي ${r.skipped}` : ""}.`);
+      void queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+    onError: (e) => setMsg((e as Error).message),
+  });
+
+  return (
+    <div className="flex items-center gap-2">
+      <a
+        href="/api/rules/template"
+        className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+      >
+        <Download className="h-4 w-4" />
+        قالب CSV
+      </a>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) { setMsg(null); mutation.mutate(f); }
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={mutation.isPending}
+        className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
+      >
+        {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        استيراد CSV
+      </button>
+      {msg && <span className="text-xs text-[rgb(var(--muted))]">{msg}</span>}
+    </div>
+  );
+}
