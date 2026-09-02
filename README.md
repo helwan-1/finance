@@ -183,6 +183,16 @@ The committed initial migration (`prisma/migrations/*_init`) has been applied an
 seeded against a real PostgreSQL 16 instance: 134 transactions, 7 reconciliation
 matches, and 7 anomaly flags across the seeded engagement.
 
+### Importing your ledger (real data)
+
+The most accurate way to load real data is **`POST /api/transactions/import`** — a
+CSV/Excel ledger import (button on the Documents page; `/api/transactions/template`
+gives a ready-to-fill Arabic template). Values are stored **exactly as entered**
+(no OCR guessing): it accepts English or Arabic headers, and normalizes amounts
+with thousands separators or Arabic-Indic digits. Document upload (OCR) is the
+alternative and needs `ANTHROPIC_API_KEY` for real extraction; without it the
+stub parser fills placeholder values.
+
 ### Real data vs. demo
 
 The dashboard renders even **without** a database using in-memory demo datasets.
