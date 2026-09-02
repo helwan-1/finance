@@ -18,6 +18,7 @@ import {
 } from "@/lib/labels";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { UploadButton } from "./upload-button";
+import { ImportTransactions } from "./import-transactions";
 
 async function fetchDocuments(
   engagementId: string,
@@ -50,7 +51,16 @@ export function DocumentsView() {
         <p className="text-sm text-[rgb(var(--muted))]">
           {data ? `${data.documents.length} مستند` : " "}
         </p>
-        <UploadButton />
+        <div className="flex flex-wrap items-center gap-2">
+          <ImportTransactions />
+          <UploadButton />
+        </div>
+      </div>
+
+      <div className="surface rounded-lg border border-brand-500/20 bg-brand-50/50 px-4 py-2.5 text-xs text-[rgb(var(--muted))] dark:bg-brand-700/5">
+        💡 لأدق النتائج على بياناتك الحقيقية استخدم «استيراد معاملات (CSV)» — تُخزَّن
+        أرقامك كما هي بلا استخراج تلقائي. رفع المستندات (OCR) يتطلب تفعيل مفتاح Claude
+        لقراءة حقيقية.
       </div>
 
       {isPending ? (
