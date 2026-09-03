@@ -3,14 +3,14 @@ import { Prisma } from "@prisma/client";
 import type { TenantTx } from "@/lib/db/tenant";
 import { withExecutionUnit } from "./unit-tx";
 import { loadExecutionContext, type ExecutionContext, type TestPin } from "./context";
-import { fetchMemberPage, assertMember, type FrozenMember, type Keyset } from "./population";
+import { assertMember, assertJEFullyInPopulation } from "./population";
 import { resultOccurrenceFingerprint, resultSemanticFingerprint } from "./result-fingerprint";
 import { toJson } from "./canonical";
 import { claimInTx, completeInTx, failRunInTx, fenceOrThrow, extendLease, type ClaimResult } from "./job";
 import { ExecutionError, LeaseLostError, RunCancelledError, ConfigError } from "./errors";
-import {
-  DQ_POPULATION_MEMBER_KIND, evaluatePopulationMember, type ResultDescriptor,
-} from "./tests/dq-population-member";
+import { resolveExecutor } from "./registry";
+import { preflight } from "./preflight";
+import type { ResultDescriptor, EvidenceRef, TestExecutor } from "./contracts";
 
 export const EXEC_DEFAULT_BATCH = 500;
 
@@ -22,11 +22,12 @@ export type ExecuteOutcome =
   | { outcome: "FAILED"; jobId: string | null; failureCode: string };
 
 /**
- * C1 orchestrator (design §2..§23). Claims a fenced attempt on a frozen QUEUED
- * run, executes each pinned test to keyset exhaustion in bounded fenced units
- * writing immutable idempotent results+evidence, then finalizes. Reads only
- * frozen authoritative rows. Never a cross-tenant scan — the caller supplies the
- * tenant + run explicitly.
+ * C1+C2 orchestrator. Claims a fenced attempt on a frozen QUEUED run, runs an
+ * all-or-nothing PREFLIGHT over every pinned test (fail CONFIG before any result),
+ * then executes each supported test to keyset exhaustion in bounded fenced units
+ * — dispatching through the registry (no giant switch) — writing immutable
+ * idempotent results+evidence, then finalizes. Reads only frozen authoritative
+ * rows; never a cross-tenant scan.
  */
 export async function executeRun(
   auditFirmId: string, runId: string, leaseOwner: string, opts?: { batchSize?: number },
@@ -45,6 +46,8 @@ export async function executeRun(
   let ctx: ExecutionContext;
   try {
     ctx = await withExecutionUnit(auditFirmId, (tx) => loadExecutionContext(tx, auditFirmId, runId));
+    // PREFLIGHT — validate EVERY pinned test before the first authoritative result.
+    preflight(ctx);
   } catch (e) {
     return terminalFail(auditFirmId, runId, jobId, e);
   }
@@ -71,78 +74,60 @@ async function terminalFail(auditFirmId: string, runId: string, jobId: string | 
 
 /**
  * Drive ONE pinned test's frozen population to keyset exhaustion during THIS
- * attempt (design §23). Exhaustion (a page < batchSize) is observed by this
- * attempt's own walk; occurrence conflicts during a re-scan never advance or
- * terminate the keyset.
+ * attempt. Each executor owns its opaque cursor; exhaustion (a short page) is
+ * observed by this attempt's own walk. Occurrence conflicts during a re-scan
+ * never advance or terminate the keyset.
  */
 async function runTestToExhaustion(
   auditFirmId: string, ctx: ExecutionContext, pin: TestPin, jobId: string, leaseOwner: string, batchSize: number,
 ): Promise<void> {
-  assertSupported(pin);
-  let after: Keyset | null = null;
-  // Bound the loop defensively; a page shorter than batchSize is the only exit.
-  for (let guard = 0; guard < 1_000_000; guard++) {
-    const step = await runResultUnit(auditFirmId, ctx, pin, jobId, leaseOwner, after, batchSize);
+  let cursor: unknown = null;
+  for (let guard = 0; guard < 5_000_000; guard++) {
+    const step = await runResultUnit(auditFirmId, ctx, pin, jobId, leaseOwner, cursor, batchSize);
     if (step.reachedEnd) return;
-    after = step.lastKey;
+    cursor = step.cursor;
   }
   throw new ConfigError("keyset scan did not terminate");
 }
 
 /**
- * One bounded, fenced result unit (design §8/§10/§11). Locks run+job, asserts
- * ownership by DB clock, processes a keyset page into immutable idempotent
- * results+evidence, extends the lease, commits — atomically.
+ * One bounded, fenced result unit. Locks run+job, asserts ownership by DB clock,
+ * resolves the pin's executor, runs one bounded page, persists its descriptors
+ * atomically, extends the lease, commits. (Signature kept stable for C1 fencing
+ * probes; the executor is resolved internally after the fence so lease/cancel
+ * errors dominate.)
  */
 export async function runResultUnit(
   auditFirmId: string, ctx: ExecutionContext, pin: TestPin, jobId: string, leaseOwner: string,
-  after: Keyset | null, batchSize: number,
-): Promise<{ processed: number; reachedEnd: boolean; lastKey: Keyset | null }> {
+  cursor: unknown, batchSize: number,
+): Promise<{ reachedEnd: boolean; cursor: unknown }> {
   return withExecutionUnit(auditFirmId, async (tx) => {
     await fenceOrThrow(tx, ctx.runId, jobId, leaseOwner);
-    const page = await fetchMemberPage(tx, ctx.preparationId, pin.auditTestVersionId, after, batchSize);
-    let lastKey = after;
-    for (const member of page) {
-      const descriptor = evaluate(pin, member);
-      await persistResult(tx, ctx, pin, descriptor);
-      lastKey = { datasetId: member.datasetId, sourceRowNo: member.sourceRowNo };
-    }
+    const exec: TestExecutor | null = resolveExecutor(pin);
+    if (!exec) throw new ConfigError(`unsupported test at execution (type=${pin.testType})`);
+    const page = await exec.executePage(tx, ctx, pin, cursor, batchSize);
+    for (const d of page.descriptors) await persistResult(tx, ctx, pin, d);
     await extendLease(tx, jobId);
-    return { processed: page.length, reachedEnd: page.length < batchSize, lastKey };
+    return { reachedEnd: page.reachedEnd, cursor: page.cursor };
   });
 }
 
-function assertSupported(pin: TestPin): void {
-  const kind = (pin.definitionJson as { dqKind?: string } | null)?.dqKind;
-  if (!(pin.testType === "DATA_QUALITY" && kind === DQ_POPULATION_MEMBER_KIND)) {
-    throw new ConfigError(`unsupported C1 test (type=${pin.testType}, dqKind=${kind ?? "none"})`);
-  }
-}
-
-function evaluate(pin: TestPin, member: FrozenMember): ResultDescriptor {
-  assertSupported(pin);
-  return evaluatePopulationMember(member);
-}
-
 /**
- * Atomic result + evidence persistence (design §10/§11). The immutable result is
- * the idempotency gate: INSERT … ON CONFLICT DO NOTHING RETURNING id. Evidence is
- * inserted ONLY when a fresh result row is returned — on conflict the winning
- * unit already co-committed the evidence, so we skip. Every evidence insert is
- * guarded by assertMember (evidence-in-population, design §17).
+ * Atomic result + evidence persistence. The immutable result is the idempotency
+ * gate: INSERT … ON CONFLICT DO NOTHING RETURNING id. Evidence is inserted ONLY
+ * for a freshly-returned result — on conflict the winning unit already co-
+ * committed the evidence. Every evidence insert is membership-guarded.
  */
 async function persistResult(tx: TenantTx, ctx: ExecutionContext, pin: TestPin, d: ResultDescriptor): Promise<void> {
-  const evidenceEOIsOrdered = d.evidence.map((e) => e.eoiFrameHash);
   const occ = resultOccurrenceFingerprint({
-    runId: ctx.runId, auditRunTestVersionId: pin.auditRunTestVersionId, resultCode: d.resultCode, evidenceEOIsOrdered,
+    runId: ctx.runId, auditRunTestVersionId: pin.auditRunTestVersionId, resultCode: d.resultCode, evidenceEOIsOrdered: d.identityEOIs,
   });
   const sem = resultSemanticFingerprint({
     semanticScopeAnchor: ctx.semanticScopeAnchor,
     testKey: pin.testKey, testVersion: pin.testVersion, testVersionHash: pin.testVersionHash,
-    ruleVersionHash: pin.ruleVersionHash,
-    effectiveParametersHash: pin.effectiveParametersHash,
+    ruleVersionHash: pin.ruleVersionHash, effectiveParametersHash: pin.effectiveParametersHash,
     consumedMappingSemanticHashes: d.consumedMappingSemanticHashes,
-    resultCode: d.resultCode, evidenceEOIsOrdered, payload: d.payload,
+    resultCode: d.resultCode, evidenceEOIsOrdered: d.identityEOIs, payload: d.payload,
   });
   const payloadText = JSON.stringify(toJson(d.payload));
   const resultId = randomUUID();
@@ -151,21 +136,40 @@ async function persistResult(tx: TenantTx, ctx: ExecutionContext, pin: TestPin, 
     INSERT INTO "audit_results"
       ("id","auditFirmId","runId","auditRunTestVersionId","resultKind","resultCode","severity","score","payloadJson","resultOccurrenceFingerprint","resultSemanticFingerprint","lineageClass","createdAt")
     VALUES
-      (${resultId}, ${ctx.auditFirmId}, ${ctx.runId}, ${pin.auditRunTestVersionId}, 'DATA_QUALITY', ${d.resultCode}, 'LOW'::"AnomalySeverity", 0.00, ${payloadText}::jsonb, ${occ}, ${sem}, 'VERIFIED'::"LineageClass", clock_timestamp())
+      (${resultId}, ${ctx.auditFirmId}, ${ctx.runId}, ${pin.auditRunTestVersionId}, ${d.resultKind}, ${d.resultCode}, ${d.severity}::"AnomalySeverity", 0.00, ${payloadText}::jsonb, ${occ}, ${sem}, 'VERIFIED'::"LineageClass", clock_timestamp())
     ON CONFLICT ("auditFirmId","runId","resultOccurrenceFingerprint") DO NOTHING
     RETURNING "id"
   `);
   if (inserted.length === 0) return; // already fully persisted (result + evidence) by the winning unit
 
   const auditResultId = inserted[0]!.id;
-  for (const e of d.evidence) {
+  for (const e of d.evidence) await insertEvidence(tx, ctx, pin, auditResultId, e);
+}
+
+/** Insert one typed evidence row after proving it belongs to the frozen population. */
+async function insertEvidence(tx: TenantTx, ctx: ExecutionContext, pin: TestPin, auditResultId: string, e: EvidenceRef): Promise<void> {
+  const id = randomUUID();
+  const firm = ctx.auditFirmId;
+  const role = e.role ?? null;
+  if (e.evidenceType === "IMPORTED_RECORD") {
     await assertMember(tx, ctx.preparationId, pin.auditTestVersionId, e.datasetId, e.sourceRowNo);
-    const evId = randomUUID();
     await tx.$executeRaw(Prisma.sql`
-      INSERT INTO "audit_result_evidence"
-        ("id","auditFirmId","auditResultId","evidenceType","role","importedRecordId","sourceRowNo","eoiFrameHash")
-      VALUES
-        (${evId}, ${ctx.auditFirmId}, ${auditResultId}, 'IMPORTED_RECORD'::"AuditEvidenceType", 'subject', ${e.importedRecordId}, ${e.sourceRowNo}, ${e.eoiFrameHash})
-    `);
+      INSERT INTO "audit_result_evidence" ("id","auditFirmId","auditResultId","evidenceType","role","importedRecordId","sourceRowNo","eoiFrameHash")
+      VALUES (${id}, ${firm}, ${auditResultId}, 'IMPORTED_RECORD'::"AuditEvidenceType", ${role}, ${e.importedRecordId}, ${e.sourceRowNo}, ${e.eoiFrameHash})`);
+  } else if (e.evidenceType === "JOURNAL_LINE") {
+    await assertMember(tx, ctx.preparationId, pin.auditTestVersionId, e.datasetId, e.sourceRowNo);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "audit_result_evidence" ("id","auditFirmId","auditResultId","evidenceType","role","journalLineId","lineNo","sourceRowNo","eoiFrameHash")
+      VALUES (${id}, ${firm}, ${auditResultId}, 'JOURNAL_LINE'::"AuditEvidenceType", ${role}, ${e.journalLineId}, ${e.lineNo}, ${e.sourceRowNo}, ${e.eoiFrameHash})`);
+  } else if (e.evidenceType === "JOURNAL_ENTRY") {
+    await assertJEFullyInPopulation(tx, ctx.preparationId, pin.auditTestVersionId, e.journalEntryId, e.datasetId);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "audit_result_evidence" ("id","auditFirmId","auditResultId","evidenceType","role","journalEntryId","sourceEntryId","eoiFrameHash")
+      VALUES (${id}, ${firm}, ${auditResultId}, 'JOURNAL_ENTRY'::"AuditEvidenceType", ${role}, ${e.journalEntryId}, ${e.sourceEntryId}, ${e.eoiFrameHash})`);
+  } else {
+    await assertMember(tx, ctx.preparationId, pin.auditTestVersionId, e.datasetId, e.sourceRowNo);
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "audit_result_evidence" ("id","auditFirmId","auditResultId","evidenceType","role","trialBalanceRowId","sourceRowNo","eoiFrameHash")
+      VALUES (${id}, ${firm}, ${auditResultId}, 'TRIAL_BALANCE_ROW'::"AuditEvidenceType", ${role}, ${e.trialBalanceRowId}, ${e.sourceRowNo}, ${e.eoiFrameHash})`);
   }
 }

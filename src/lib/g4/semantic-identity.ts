@@ -63,6 +63,20 @@ export function accountSemanticKey(a: { accountingScopeKey: string; accountCode:
 }
 
 /**
+ * Journal-entry occurrence identity (g4je.1 · C2). PK-free: the reproducible
+ * dataset content id + the source-asserted entry id (unique per dataset). Same
+ * content re-imported → same EOI; same sourceEntryId in a different dataset →
+ * different EOI (different datasetHash). NO_RELIABLE_ENTRY_ID lines never reach
+ * this (they have no JournalEntry). groupingBasis is a property, not identity.
+ */
+export function journalEntryEOI(a: { datasetHash: string; sourceEntryId: string }): string {
+  return fingerprint("g4je.1", fields([
+    ["datasetHash", str(a.datasetHash)],
+    ["sourceEntryId", str(a.sourceEntryId)],
+  ]));
+}
+
+/**
  * Semantic scope anchor (g4scope.1) — firm licenseNo (unique, non-null) + the
  * G4-owned immutable client semantic key (never a cuid) + engagement fiscalYear.
  */
