@@ -88,6 +88,56 @@ export function semanticScopeAnchor(a: { firmLicenseNo: string; clientSemanticKe
   ]));
 }
 
+/**
+ * Scope-aware statistical POPULATION identity (g4statpop.1 · C3). PK-free: the
+ * reproducible dataset content id + the exact (never normalized) transaction
+ * currency + amountBasis + methodVersion + the frozen eligiblePopulationFingerprint
+ * (g4pop.2). The population fingerprint distinguishes two frozen scopes over the
+ * SAME dataset+currency, so their signals never collide; a re-import of identical
+ * content reproduces every input → identical identity. Authoritative config
+ * (quantum, rate thresholds) enters semantic identity separately via
+ * effectiveParametersHash (g4param.1), so it is intentionally NOT folded here.
+ */
+export function statPopulationIdentity(a: {
+  datasetHash: string;
+  currency: string;
+  amountBasis: string;
+  methodVersion: string;
+  eligiblePopulationFingerprint: string;
+}): string {
+  return fingerprint("g4statpop.1", fields([
+    ["datasetHash", str(a.datasetHash)],
+    ["currency", str(a.currency)],
+    ["amountBasis", str(a.amountBasis)],
+    ["methodVersion", str(a.methodVersion)],
+    ["eligiblePopulationFingerprint", str(a.eligiblePopulationFingerprint)],
+  ]));
+}
+
+/**
+ * Scope-aware statistical GROUP identity (g4statgrp.1 · C3). As g4statpop.1 plus
+ * the canonical scalar amount (exact fixed-point string, never a float), so each
+ * duplicate-amount group within a (dataset, currency) population has a distinct,
+ * reproducible identity.
+ */
+export function statAmountGroupIdentity(a: {
+  datasetHash: string;
+  currency: string;
+  amountBasis: string;
+  methodVersion: string;
+  eligiblePopulationFingerprint: string;
+  scalarAmount: string;
+}): string {
+  return fingerprint("g4statgrp.1", fields([
+    ["datasetHash", str(a.datasetHash)],
+    ["currency", str(a.currency)],
+    ["amountBasis", str(a.amountBasis)],
+    ["methodVersion", str(a.methodVersion)],
+    ["eligiblePopulationFingerprint", str(a.eligiblePopulationFingerprint)],
+    ["scalarAmount", str(a.scalarAmount)],
+  ]));
+}
+
 /** Deterministic hash of a resolved effective-parameters object (sorted keys). */
 export function effectiveParametersHash(params: Record<string, unknown>): string {
   const pairs: Array<[string, Buffer]> = Object.entries(params).map(([k, v]) => [k, str(v === null || v === undefined ? null : String(v))]);

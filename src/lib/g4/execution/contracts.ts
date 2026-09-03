@@ -49,7 +49,7 @@ export interface ExecPageResult {
 export interface TestExecutor {
   testType: string;
   kind: string;
-  grain: "IMPORTED_RECORD" | "JOURNAL_LINE" | "JOURNAL_ENTRY" | "TB_ACCOUNT";
+  grain: "IMPORTED_RECORD" | "JOURNAL_LINE" | "JOURNAL_ENTRY" | "TB_ACCOUNT" | "STAT_CURRENCY_POP" | "STAT_AMOUNT_GROUP";
   supportedDatasetKinds: string[];
   /** Preflight: throw ConfigError if this frozen pin cannot be executed. Read-only. */
   validateFrozenConfig(ctx: ExecutionContext, pin: TestPin): void;

@@ -239,6 +239,180 @@ export async function fetchTBDuplicateGroups(
   }));
 }
 
+// ── C3 statistical: scope-aware population fingerprints + bounded aggregate pages ──
+
+/**
+ * Read the frozen eligiblePopulationFingerprint (g4pop.2) per pinned dataset for
+ * one (preparation, testVersion). Feeds the PK-free statistical population/group
+ * identity so two frozen scopes over the same dataset+currency never collide.
+ */
+export async function fetchEligiblePopulationFingerprints(
+  tx: TenantTx, preparationId: string, auditTestVersionId: string, datasetIds: string[],
+): Promise<Map<string, string>> {
+  if (datasetIds.length === 0) return new Map();
+  const rows = await tx.$queryRaw<Array<{ datasetId: string; fp: string | null }>>(Prisma.sql`
+    SELECT "datasetId" AS "datasetId", "eligiblePopulationFingerprint" AS "fp"
+    FROM "audit_run_scope_resolutions"
+    WHERE "preparationId"=${preparationId} AND "auditTestVersionId"=${auditTestVersionId}
+      AND "eligibility" <> 'NOT_ELIGIBLE'
+      AND "datasetId" IN (${Prisma.join(datasetIds)})
+  `);
+  const map = new Map<string, string>();
+  for (const r of rows) if (r.fp) map.set(r.datasetId, r.fp);
+  return map;
+}
+
+/**
+ * The single-sided positive transaction scalar (frozen contract): debit-only or
+ * credit-only positive; both-sided / negative / zero / null → NULL. One line
+ * contributes AT MOST one scalar. Written with a literal alias so it can appear
+ * both in the aggregate (`l`) and the evidence LATERAL (`l2`).
+ */
+function scalarExpr(a: "l" | "l2"): Prisma.Sql {
+  return Prisma.raw(`(CASE
+    WHEN ${a}."transactionDebit" > 0 AND (${a}."transactionCredit" IS NULL OR ${a}."transactionCredit" = 0) THEN ${a}."transactionDebit"
+    WHEN ${a}."transactionCredit" > 0 AND (${a}."transactionDebit" IS NULL OR ${a}."transactionDebit" = 0) THEN ${a}."transactionCredit"
+    ELSE NULL END)`);
+}
+
+export interface RoundGroupFlatRow {
+  datasetId: string; datasetHash: string; currency: string;
+  eligibleCount: bigint; roundCount: bigint;
+  evSourceRowNo: number | null; evJournalLineId: string | null; evLineNo: number | null; evEoi: string | null;
+}
+
+/**
+ * ONE bounded page of ROUND-NUMBER signal groups + their top-K round-line evidence
+ * in a SINGLE query (no per-group round-trip). The aggregate groups the frozen,
+ * member-anchored single-sided population by (dataset, currency) and applies the
+ * exact integer-count breach in HAVING; a LATERAL attaches at most K qualifying
+ * ROUND lines per group. Currency ordering/keyset is pinned to COLLATE "C"
+ * (deployment-independent, exact-string). At most batchSize×K rows are returned.
+ * No OFFSET. Round predicate: exact NUMERIC `mod(scalar, quantum) = 0`.
+ */
+export async function fetchRoundNumberSignalPage(
+  tx: TenantTx, preparationId: string, auditTestVersionId: string, datasetIds: string[],
+  quantum: string, minPop: number, minRound: number, rateNum: number, rateDenom: number,
+  after: { datasetId: string; currency: string } | null, batchSize: number, k: number,
+): Promise<RoundGroupFlatRow[]> {
+  const sL = scalarExpr("l");
+  const sL2 = scalarExpr("l2");
+  const keyset = after
+    ? Prisma.sql`AND ( m."datasetId" COLLATE "C" > ${after.datasetId} COLLATE "C"
+        OR ( m."datasetId" COLLATE "C" = ${after.datasetId} COLLATE "C"
+             AND l."transactionCurrency" COLLATE "C" > ${after.currency} COLLATE "C" ) )`
+    : Prisma.empty;
+  return tx.$queryRaw<RoundGroupFlatRow[]>(Prisma.sql`
+    SELECT g."datasetId" AS "datasetId", g."datasetHash" AS "datasetHash", g."currency" AS "currency",
+           g."eligibleCount" AS "eligibleCount", g."roundCount" AS "roundCount",
+           ev."sourceRowNo" AS "evSourceRowNo", ev."journalLineId" AS "evJournalLineId",
+           ev."lineNo" AS "evLineNo", ev."eoiFrameHash" AS "evEoi"
+    FROM (
+      SELECT m."datasetId" AS "datasetId", d."datasetHash" AS "datasetHash", l."transactionCurrency" AS "currency",
+             count(*) AS "eligibleCount",
+             count(*) FILTER (WHERE mod(${sL}, ${quantum}::numeric) = 0) AS "roundCount"
+      FROM "audit_run_scope_members" m
+      JOIN "audit_run_scope_resolutions" r ON r."preparationId"=m."preparationId" AND r."auditTestVersionId"=m."auditTestVersionId" AND r."datasetId"=m."datasetId"
+      JOIN "audit_run_datasets" d ON d."preparationId"=m."preparationId" AND d."datasetId"=m."datasetId"
+      JOIN "imported_records" ir ON ir."datasetId"=m."datasetId" AND ir."sourceRowNo"=m."sourceRowNo"
+      JOIN "journal_lines" l ON l."datasetId"=m."datasetId" AND l."importedRecordId"=ir."id"
+      WHERE m."preparationId"=${preparationId} AND m."auditTestVersionId"=${auditTestVersionId} AND r."eligibility" <> 'NOT_ELIGIBLE'
+        AND m."datasetId" IN (${Prisma.join(datasetIds)})
+        AND l."transactionCurrency" IS NOT NULL
+        AND ${sL} IS NOT NULL
+        ${keyset}
+      GROUP BY m."datasetId", d."datasetHash", l."transactionCurrency"
+      HAVING count(*) >= ${minPop}
+         AND count(*) FILTER (WHERE mod(${sL}, ${quantum}::numeric) = 0) >= ${minRound}
+         AND count(*) FILTER (WHERE mod(${sL}, ${quantum}::numeric) = 0) * ${rateDenom}::bigint >= ${rateNum}::bigint * count(*)
+      ORDER BY m."datasetId" COLLATE "C" ASC, l."transactionCurrency" COLLATE "C" ASC
+      LIMIT ${batchSize}
+    ) g
+    LEFT JOIN LATERAL (
+      SELECT ir2."sourceRowNo" AS "sourceRowNo", l2."id" AS "journalLineId", l2."lineNo" AS "lineNo", m2."eoiFrameHash" AS "eoiFrameHash"
+      FROM "audit_run_scope_members" m2
+      JOIN "audit_run_scope_resolutions" r2 ON r2."preparationId"=m2."preparationId" AND r2."auditTestVersionId"=m2."auditTestVersionId" AND r2."datasetId"=m2."datasetId"
+      JOIN "imported_records" ir2 ON ir2."datasetId"=m2."datasetId" AND ir2."sourceRowNo"=m2."sourceRowNo"
+      JOIN "journal_lines" l2 ON l2."datasetId"=m2."datasetId" AND l2."importedRecordId"=ir2."id"
+      WHERE m2."preparationId"=${preparationId} AND m2."auditTestVersionId"=${auditTestVersionId} AND r2."eligibility" <> 'NOT_ELIGIBLE'
+        AND m2."datasetId" = g."datasetId"
+        AND l2."transactionCurrency" COLLATE "C" = g."currency" COLLATE "C"
+        AND ${sL2} IS NOT NULL
+        AND mod(${sL2}, ${quantum}::numeric) = 0
+      ORDER BY m2."datasetId" COLLATE "C" ASC, ir2."sourceRowNo" ASC
+      LIMIT ${k}
+    ) ev ON true
+    ORDER BY g."datasetId" COLLATE "C" ASC, g."currency" COLLATE "C" ASC, ev."sourceRowNo" ASC NULLS LAST
+  `);
+}
+
+export interface DuplicateGroupFlatRow {
+  datasetId: string; datasetHash: string; currency: string; scalar: string; occurrenceCount: bigint;
+  evSourceRowNo: number | null; evJournalLineId: string | null; evLineNo: number | null; evEoi: string | null;
+}
+
+/**
+ * ONE bounded page of DUPLICATE-AMOUNT signal groups + their top-K member-line
+ * evidence in a SINGLE query. Groups the frozen, member-anchored single-sided
+ * population by (dataset, currency, scalar) with `count(*) >= minOccurrence`; a
+ * LATERAL attaches at most K lines per group (exact NUMERIC scalar equality).
+ * occurrenceCount is the FULL DB-side group count; only ≤ K evidence rows cross
+ * into materialization even for a 100k-row group. COLLATE "C" currency ordering,
+ * NUMERIC scalar ordering, keyset, no OFFSET.
+ */
+export async function fetchDuplicateAmountSignalPage(
+  tx: TenantTx, preparationId: string, auditTestVersionId: string, datasetIds: string[],
+  minOccurrence: number,
+  after: { datasetId: string; currency: string; scalar: string } | null, batchSize: number, k: number,
+): Promise<DuplicateGroupFlatRow[]> {
+  const sL = scalarExpr("l");
+  const sL2 = scalarExpr("l2");
+  const keyset = after
+    ? Prisma.sql`AND ( m."datasetId" COLLATE "C" > ${after.datasetId} COLLATE "C"
+        OR ( m."datasetId" COLLATE "C" = ${after.datasetId} COLLATE "C" AND l."transactionCurrency" COLLATE "C" > ${after.currency} COLLATE "C" )
+        OR ( m."datasetId" COLLATE "C" = ${after.datasetId} COLLATE "C" AND l."transactionCurrency" COLLATE "C" = ${after.currency} COLLATE "C" AND ${sL} > ${after.scalar}::numeric ) )`
+    : Prisma.empty;
+  return tx.$queryRaw<DuplicateGroupFlatRow[]>(Prisma.sql`
+    SELECT g."datasetId" AS "datasetId", g."datasetHash" AS "datasetHash", g."currency" AS "currency",
+           g."scalar" AS "scalar", g."occurrenceCount" AS "occurrenceCount",
+           ev."sourceRowNo" AS "evSourceRowNo", ev."journalLineId" AS "evJournalLineId",
+           ev."lineNo" AS "evLineNo", ev."eoiFrameHash" AS "evEoi"
+    FROM (
+      SELECT m."datasetId" AS "datasetId", d."datasetHash" AS "datasetHash", l."transactionCurrency" AS "currency",
+             ${sL} AS "scalarNum", (${sL})::text AS "scalar",
+             count(*) AS "occurrenceCount"
+      FROM "audit_run_scope_members" m
+      JOIN "audit_run_scope_resolutions" r ON r."preparationId"=m."preparationId" AND r."auditTestVersionId"=m."auditTestVersionId" AND r."datasetId"=m."datasetId"
+      JOIN "audit_run_datasets" d ON d."preparationId"=m."preparationId" AND d."datasetId"=m."datasetId"
+      JOIN "imported_records" ir ON ir."datasetId"=m."datasetId" AND ir."sourceRowNo"=m."sourceRowNo"
+      JOIN "journal_lines" l ON l."datasetId"=m."datasetId" AND l."importedRecordId"=ir."id"
+      WHERE m."preparationId"=${preparationId} AND m."auditTestVersionId"=${auditTestVersionId} AND r."eligibility" <> 'NOT_ELIGIBLE'
+        AND m."datasetId" IN (${Prisma.join(datasetIds)})
+        AND l."transactionCurrency" IS NOT NULL
+        AND ${sL} IS NOT NULL
+        ${keyset}
+      GROUP BY m."datasetId", d."datasetHash", l."transactionCurrency", ${sL}
+      HAVING count(*) >= ${minOccurrence}
+      ORDER BY m."datasetId" COLLATE "C" ASC, l."transactionCurrency" COLLATE "C" ASC, ${sL} ASC
+      LIMIT ${batchSize}
+    ) g
+    LEFT JOIN LATERAL (
+      SELECT ir2."sourceRowNo" AS "sourceRowNo", l2."id" AS "journalLineId", l2."lineNo" AS "lineNo", m2."eoiFrameHash" AS "eoiFrameHash"
+      FROM "audit_run_scope_members" m2
+      JOIN "audit_run_scope_resolutions" r2 ON r2."preparationId"=m2."preparationId" AND r2."auditTestVersionId"=m2."auditTestVersionId" AND r2."datasetId"=m2."datasetId"
+      JOIN "imported_records" ir2 ON ir2."datasetId"=m2."datasetId" AND ir2."sourceRowNo"=m2."sourceRowNo"
+      JOIN "journal_lines" l2 ON l2."datasetId"=m2."datasetId" AND l2."importedRecordId"=ir2."id"
+      WHERE m2."preparationId"=${preparationId} AND m2."auditTestVersionId"=${auditTestVersionId} AND r2."eligibility" <> 'NOT_ELIGIBLE'
+        AND m2."datasetId" = g."datasetId"
+        AND l2."transactionCurrency" COLLATE "C" = g."currency" COLLATE "C"
+        AND ${sL2} = g."scalarNum"
+      ORDER BY m2."datasetId" COLLATE "C" ASC, ir2."sourceRowNo" ASC
+      LIMIT ${k}
+    ) ev ON true
+    ORDER BY g."datasetId" COLLATE "C" ASC, g."currency" COLLATE "C" ASC, g."scalarNum" ASC, ev."sourceRowNo" ASC NULLS LAST
+  `);
+}
+
 /** Bounded representative rows for a duplicate group: first K by sourceRowNo (all frozen members). */
 export async function fetchTBGroupRows(
   tx: TenantTx, preparationId: string, auditTestVersionId: string, trialBalanceId: string, accountSnapshotId: string, k: number,

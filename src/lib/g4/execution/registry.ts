@@ -5,6 +5,8 @@ import { sourceToCanonicalExecutor } from "./data-quality/source-to-canonical";
 import { unbalancedJournalEntryExecutor } from "./accounting/unbalanced-je";
 import { invalidDebitCreditExecutor } from "./accounting/invalid-debit-credit";
 import { tbAccountDuplicationExecutor } from "./accounting/tb-account-duplication";
+import { roundNumberFrequencyExecutor } from "./statistical/round-number-frequency";
+import { duplicateAmountFrequencyExecutor } from "./statistical/duplicate-amount-frequency";
 
 /** Registry key = "<testType>:<kind>". */
 function key(testType: string, kind: string): string {
@@ -17,6 +19,8 @@ const EXECUTORS: TestExecutor[] = [
   unbalancedJournalEntryExecutor,
   invalidDebitCreditExecutor,
   tbAccountDuplicationExecutor,
+  roundNumberFrequencyExecutor, // C3
+  duplicateAmountFrequencyExecutor, // C3
 ];
 
 export const REGISTRY: ReadonlyMap<string, TestExecutor> = new Map(EXECUTORS.map((e) => [key(e.testType, e.kind), e]));
