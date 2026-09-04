@@ -5,12 +5,12 @@ import type { FindingCategoriesResponse, FindingCategoryDTO } from "@/lib/ui-typ
 
 /** Fallback categories when the reference table is empty/unreachable. */
 const FALLBACK: FindingCategoryDTO[] = [
-  { code: "CONTROL_DEFICIENCY", labelAr: "قصور في الرقابة الداخلية" },
-  { code: "COMPLIANCE", labelAr: "مخالفة للأنظمة والتشريعات" },
-  { code: "MISSTATEMENT", labelAr: "تحريف في القوائم المالية" },
-  { code: "FRAUD_INDICATOR", labelAr: "مؤشر احتيال" },
-  { code: "PROCESS_GAP", labelAr: "فجوة في الإجراءات" },
-  { code: "OTHER", labelAr: "أخرى" },
+  { code: "FS_MISSTATEMENT", labelAr: "تحريف في القوائم المالية" },
+  { code: "CONTROL_DEFICIENCY", labelAr: "قصور في الرقابة" },
+  { code: "COMPLIANCE_MATTER", labelAr: "مسألة امتثال" },
+  { code: "FRAUD_RISK_INDICATOR", labelAr: "مؤشر مخاطر احتيال" },
+  { code: "DATA_QUALITY_MATTER", labelAr: "مسألة جودة بيانات" },
+  { code: "OTHER", labelAr: "مسألة تدقيق أخرى" },
 ];
 
 /**

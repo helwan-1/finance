@@ -113,55 +113,85 @@ async function main(): Promise<void> {
   for (const uid of allUserIds) await ensureMember(firm, engagementId, uid);
   console.log(`Members ensured for ${allUserIds.size} user(s). preparer=${preparerId} reviewer=${reviewerId}`);
 
-  // Idempotency: skip demo matters if already present.
-  const already = await withTenantContext(firm, (t) =>
-    t.auditException.findFirst({ where: { engagementId, creationIdempotencyKey: { startsWith: "seed-demo-" } }, select: { id: true } }),
-  );
-  if (already) {
-    console.log("Demo matters already exist — skipping creation. (Membership + a fresh spare result still ensured.)");
-    await fabricateResult(firm, engagementId);
-    console.log("Done.");
-    return;
+  // Re-runnable helpers: resolve existing state by stable idempotency keys.
+  const exByKey = (key: string) =>
+    withTenantContext(firm, (t) =>
+      t.auditException.findFirst({
+        where: { engagementId, creationIdempotencyKey: key },
+        select: { id: true, currentStatus: true },
+      }),
+    );
+  const findingOf = (exceptionId: string) =>
+    withTenantContext(firm, (t) =>
+      t.auditFinding.findFirst({
+        where: { exceptionId },
+        select: { id: true, currentStatus: true, currentVersionId: true },
+      }),
+    );
+
+  let createdAny = false;
+
+  // ---- Matter 1: driven all the way to CONCLUDED ----
+  let ex1 = await exByKey("seed-demo-1");
+  if (!ex1) {
+    const r = await fabricateResult(firm, engagementId);
+    const c = await createExceptionFromResult(firm, {
+      engagementId, createdById: preparerId,
+      title: "Debit/credit integrity breach", titleAr: "مخالفة سلامة القيد المزدوج",
+      description: "مسألة تجريبية مُنشأة بالبذرة لعرض الدورة الكاملة.",
+      priority: "HIGH", firstResultId: r, idempotencyKey: "seed-demo-1",
+    });
+    ex1 = { id: c.exceptionId, currentStatus: "OPEN" };
+    createdAny = true;
   }
+  let f1 = await findingOf(ex1.id);
+  if (!f1) {
+    const c = await createFinding(firm, {
+      exceptionId: ex1.id, engagementId, createdById: preparerId,
+      content: demoContent("CONTROL_DEFICIENCY"), idempotencyKey: "seed-demo-f1",
+    });
+    f1 = { id: c.findingId, currentStatus: "DRAFT", currentVersionId: c.versionId };
+  }
+  if (f1.currentStatus === "DRAFT") {
+    await submitFinding(firm, { findingId: f1.id, actorId: preparerId, idempotencyKey: "seed-demo-s1" });
+    f1 = { ...f1, currentStatus: "IN_REVIEW" };
+  }
+  if (f1.currentStatus === "IN_REVIEW" && f1.currentVersionId) {
+    await reviewFinding(firm, {
+      findingId: f1.id, actorId: reviewerId, action: "APPROVE",
+      findingVersionId: f1.currentVersionId, note: "معتمدة", idempotencyKey: "seed-demo-r1",
+    });
+  }
+  const ex1now = await exByKey("seed-demo-1");
+  if (ex1now && ex1now.currentStatus !== "CONCLUDED_WITH_FINDING") {
+    await concludeException(firm, { exceptionId: ex1.id, actorId: preparerId, idempotencyKey: "seed-demo-c1" });
+  }
+  console.log(`Matter 1 ready (CONCLUDED): ${ex1.id}`);
 
-  const [r1, r2] = await Promise.all([
-    fabricateResult(firm, engagementId),
-    fabricateResult(firm, engagementId),
-  ]);
-  await fabricateResult(firm, engagementId); // a spare, left free to try in the UI
-  console.log("Fabricated 3 audit results.");
+  // ---- Matter 2: OPEN with a DRAFT finding ----
+  let ex2 = await exByKey("seed-demo-2");
+  if (!ex2) {
+    const r = await fabricateResult(firm, engagementId);
+    const c = await createExceptionFromResult(firm, {
+      engagementId, createdById: preparerId,
+      title: "Second matter under review", titleAr: "مسألة قيد الإعداد",
+      description: "مسألة تجريبية ثانية بنتيجة في حالة مسودة.",
+      priority: "MEDIUM", firstResultId: r, idempotencyKey: "seed-demo-2",
+    });
+    ex2 = { id: c.exceptionId, currentStatus: "OPEN" };
+    createdAny = true;
+  }
+  const f2 = await findingOf(ex2.id);
+  if (!f2) {
+    await createFinding(firm, {
+      exceptionId: ex2.id, engagementId, createdById: preparerId,
+      content: demoContent("DATA_QUALITY_MATTER"), idempotencyKey: "seed-demo-f2",
+    });
+  }
+  console.log(`Matter 2 ready (OPEN, draft finding): ${ex2.id}`);
 
-  // Matter 1 — worked all the way to CONCLUDED.
-  const ex1 = await createExceptionFromResult(firm, {
-    engagementId, createdById: preparerId,
-    title: "Debit/credit integrity breach", titleAr: "مخالفة سلامة القيد المزدوج",
-    description: "مسألة تجريبية مُنشأة بالبذرة لعرض الدورة الكاملة.",
-    priority: "HIGH", firstResultId: r1, idempotencyKey: "seed-demo-1",
-  });
-  const f1 = await createFinding(firm, {
-    exceptionId: ex1.exceptionId, engagementId, createdById: preparerId,
-    content: demoContent("CONTROL_DEFICIENCY"), idempotencyKey: "seed-demo-f1",
-  });
-  await submitFinding(firm, { findingId: f1.findingId, actorId: preparerId, idempotencyKey: "seed-demo-s1" });
-  await reviewFinding(firm, {
-    findingId: f1.findingId, actorId: reviewerId, action: "APPROVE",
-    findingVersionId: f1.versionId, note: "معتمدة", idempotencyKey: "seed-demo-r1",
-  });
-  await concludeException(firm, { exceptionId: ex1.exceptionId, actorId: preparerId, idempotencyKey: "seed-demo-c1" });
-  console.log(`Matter 1 concluded: ${ex1.exceptionId}`);
-
-  // Matter 2 — OPEN with a DRAFT finding.
-  const ex2 = await createExceptionFromResult(firm, {
-    engagementId, createdById: preparerId,
-    title: "Second matter under review", titleAr: "مسألة قيد الإعداد",
-    description: "مسألة تجريبية ثانية بنتيجة في حالة مسودة.",
-    priority: "MEDIUM", firstResultId: r2, idempotencyKey: "seed-demo-2",
-  });
-  await createFinding(firm, {
-    exceptionId: ex2.exceptionId, engagementId, createdById: preparerId,
-    content: demoContent("PROCESS_GAP"), idempotencyKey: "seed-demo-f2",
-  });
-  console.log(`Matter 2 (open, draft finding): ${ex2.exceptionId}`);
+  // A spare, un-linked result so you can create your own matter from the UI.
+  if (createdAny) await fabricateResult(firm, engagementId);
 
   console.log("\n✅ Seed complete. Refresh /findings to see two matters + a spare audit result.");
 }
