@@ -1,6 +1,5 @@
 import type { TenantTx } from "@/lib/db/tenant";
 import { semanticScopeAnchor } from "@/lib/g4/semantic-identity";
-import { resolveClientSemanticKey } from "@/lib/g4/run";
 import { ConfigError } from "./errors";
 
 export interface TestPin {
@@ -44,18 +43,28 @@ export interface ExecutionContext {
 export async function loadExecutionContext(tx: TenantTx, auditFirmId: string, runId: string): Promise<ExecutionContext> {
   const run = await tx.auditRun.findUnique({
     where: { id: runId },
-    select: { id: true, engagementId: true, clientCompanyId: true, engineBuildVersion: true, freezeGeneration: true },
+    select: {
+      id: true, engagementId: true, clientCompanyId: true, engineBuildVersion: true, freezeGeneration: true,
+      frozenFirmLicenseNo: true, frozenFiscalYear: true, frozenClientSemanticKey: true,
+    },
   });
   if (!run) throw new ConfigError("run not found in tenant");
   if (!run.freezeGeneration) throw new ConfigError("run has no authoritative frozen generation (freezeGeneration)");
   if (!run.engineBuildVersion) throw new ConfigError("run has no frozen engineBuildVersion");
   const preparationId = run.freezeGeneration;
 
-  const firm = await tx.auditFirm.findUnique({ where: { id: auditFirmId }, select: { licenseNo: true } });
-  const eng = await tx.auditEngagement.findUnique({ where: { id: run.engagementId }, select: { fiscalYear: true } });
-  if (!firm || !eng) throw new ConfigError("firm/engagement not resolvable under tenant");
-  const clientKey = run.clientCompanyId ? await resolveClientSemanticKey(tx, auditFirmId, run.clientCompanyId) : "g4ck:none";
-  const anchor = semanticScopeAnchor({ firmLicenseNo: firm.licenseNo, clientSemanticKey: clientKey, fiscalYear: eng.fiscalYear });
+  // Semantic scope is read EXCLUSIVELY from the frozen run snapshot (ADR — G4
+  // frozen semantic-scope reproducibility). Execution never reads the mutable
+  // current AuditFirm.licenseNo / AuditEngagement.fiscalYear / client semantic
+  // key. Legacy frozen runs lacking the snapshot fail closed (not re-executable).
+  if (run.frozenFirmLicenseNo === null || run.frozenFiscalYear === null || run.frozenClientSemanticKey === null) {
+    throw new ConfigError("legacy frozen run lacks reproducible semantic-scope snapshot; not re-executable");
+  }
+  const anchor = semanticScopeAnchor({
+    firmLicenseNo: run.frozenFirmLicenseNo,
+    clientSemanticKey: run.frozenClientSemanticKey,
+    fiscalYear: run.frozenFiscalYear,
+  });
 
   const artvs = await tx.auditRunTestVersion.findMany({
     where: { preparationId },

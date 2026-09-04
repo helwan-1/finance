@@ -1321,6 +1321,12 @@ model AuditRun {
   freezeFormatVersion String?
   frozenAt            DateTime?
   freezeGeneration    String? // → exactly one authoritative AuditRunPreparation (composite FK)
+  // Frozen semantic-scope snapshot (ADR G4 reproducibility): the exact semantic
+  // scope inputs captured at publish so execution/historical reopen never read
+  // mutable current master. Set-once + freeze-completeness enforced by trigger.
+  frozenFirmLicenseNo     String?
+  frozenFiscalYear        Int?
+  frozenClientSemanticKey String?
   maxAttempts         Int               @default(3)
   failureCode         AuditFailureCode?
   failureDetail       String?

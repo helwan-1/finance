@@ -119,11 +119,12 @@ run("G4 Phase A invariants", () => {
     const gA = await seedRunGraph("firmA"); // run A + its prep (gen1)
     const gB = await seedRunGraph("firmA"); // run B + its prep (gen1)
     // Point run B's freezeGeneration at run A's preparation → composite FK (firm,id,freezeGen)->(firm,runId,id) fails.
+    // (Snapshot fields supplied so the freeze-completeness guard passes and the FK check is what rejects.)
     await expect(
-      withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${gA.prepId} WHERE "id"=${gB.runId}`),
+      withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${gA.prepId}, "frozenFirmLicenseNo"='L', "frozenFiscalYear"=2024, "frozenClientSemanticKey"='K' WHERE "id"=${gB.runId}`),
     ).rejects.toThrow(/foreign key|violates/i);
     // Correct pinning to the run's OWN generation succeeds.
-    await withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${gB.prepId} WHERE "id"=${gB.runId}`);
+    await withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${gB.prepId}, "frozenFirmLicenseNo"='L', "frozenFiscalYear"=2024, "frozenClientSemanticKey"='K' WHERE "id"=${gB.runId}`);
     const row = await withTenantContext("firmA", (t) => t.auditRun.findUnique({ where: { id: gB.runId }, select: { freezeGeneration: true } }));
     expect(row?.freezeGeneration).toBe(gB.prepId);
   });
@@ -131,7 +132,8 @@ run("G4 Phase A invariants", () => {
   it("P: a PUBLISHED authoritative generation cannot be deleted or replaced", async () => {
     const g = await seedRunGraph("firmA");
     // publish: point run to its generation, mark generation PUBLISHED
-    await withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${g.prepId} WHERE "id"=${g.runId}`);
+    // (Snapshot fields supplied to satisfy the freeze-completeness guard.)
+    await withTenantContext("firmA", (t) => t.$executeRaw`UPDATE "audit_runs" SET "freezeGeneration"=${g.prepId}, "frozenFirmLicenseNo"='L', "frozenFiscalYear"=2024, "frozenClientSemanticKey"='K' WHERE "id"=${g.runId}`);
     await withTenantContext("firmA", (t) => t.auditRunPreparation.update({ where: { id: g.prepId }, data: { status: "PUBLISHED" } }));
     // cannot delete (FK RESTRICT from audit_runs.freezeGeneration)
     await expect(

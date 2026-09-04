@@ -86,7 +86,13 @@ export async function publishRun(auditFirmId: string, runId: string, prepId: str
     await tx.auditRunPreparation.update({ where: { id: prepId }, data: { status: "PUBLISHED" } });
     await tx.auditRun.update({
       where: { id: runId },
-      data: { freezeGeneration: prepId, engineBuildVersion, configFingerprint: cfg, freezeFormatVersion: FREEZE_FORMAT_VERSION, frozenAt: new Date(), status: "QUEUED" },
+      data: {
+        freezeGeneration: prepId, engineBuildVersion, configFingerprint: cfg, freezeFormatVersion: FREEZE_FORMAT_VERSION, frozenAt: new Date(), status: "QUEUED",
+        // Frozen semantic-scope snapshot (ADR): capture the EXACT semantic inputs
+        // used to compute the anchor/configFingerprint above, so execution and
+        // historical reopen never re-read mutable current master. Same in-tx reads.
+        frozenFirmLicenseNo: firm!.licenseNo, frozenFiscalYear: eng!.fiscalYear, frozenClientSemanticKey: clientKey,
+      },
     });
     return { configFingerprint: cfg, engineBuildVersion };
   });
