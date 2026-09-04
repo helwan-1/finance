@@ -208,3 +208,97 @@ export interface SettingsResponse {
   canEdit: boolean;
   settings: FirmSettings;
 }
+
+// ---- G5: Professional dispositions & findings ----
+
+export type MatterPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export type ExceptionStatus =
+  | "OPEN"
+  | "UNDER_INVESTIGATION"
+  | "CONCLUDED_WITH_FINDING"
+  | "CLOSED_NO_FINDING";
+
+export type FindingStatus = "DRAFT" | "IN_REVIEW" | "CONCLUDED" | "WITHDRAWN";
+
+/** IMRAD-style finding content (one version). */
+export interface FindingContentDTO {
+  category: string;
+  condition: string;
+  criteria: string;
+  cause: string;
+  effect: string;
+  auditorConclusion: string;
+  recommendation: string | null;
+  observedAmount: string | null;
+  observedCurrency: string | null;
+  estimatedExposureAmount: string | null;
+  estimatedExposureCurrency: string | null;
+}
+
+export interface FindingVersionDTO extends FindingContentDTO {
+  id: string;
+  versionNo: number;
+  preparedById: string;
+  preparedAt: string;
+}
+
+export interface FindingDTO {
+  id: string;
+  status: FindingStatus;
+  currentVersionId: string | null;
+  createdById: string;
+  createdAt: string;
+  currentVersion: FindingVersionDTO | null;
+}
+
+export interface ExceptionDTO {
+  id: string;
+  status: ExceptionStatus;
+  priority: MatterPriority;
+  title: string;
+  titleAr: string | null;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  linkedResultCount: number;
+  findingCount: number;
+}
+
+export interface ExceptionsResponse {
+  exceptions: ExceptionDTO[];
+  total: number;
+}
+
+export interface ExceptionDetailDTO extends ExceptionDTO {
+  linkedResultIds: string[];
+  findings: FindingDTO[];
+}
+
+export interface ExceptionDetailResponse {
+  exception: ExceptionDetailDTO;
+}
+
+/** An audit result (G4) that an exception can be created from. */
+export interface AuditResultDTO {
+  id: string;
+  resultKind: string;
+  resultCode: string;
+  severity: AnomalySeverity;
+  score: string;
+  createdAt: string;
+  dispositionState: string;
+}
+
+export interface AuditResultsResponse {
+  results: AuditResultDTO[];
+}
+
+export interface FindingCategoryDTO {
+  code: string;
+  labelAr: string;
+}
+
+export interface FindingCategoriesResponse {
+  categories: FindingCategoryDTO[];
+}

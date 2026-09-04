@@ -4,6 +4,9 @@ import type {
   AnomalyStatus,
   DocumentStatus,
   DocumentType,
+  ExceptionStatus,
+  FindingStatus,
+  MatterPriority,
   ReconMatchStatus,
 } from "./ui-types";
 
@@ -125,4 +128,49 @@ export const SEVERITY_BAR: Record<AnomalySeverity, string> = {
   MEDIUM: "bg-severity-medium",
   LOW: "bg-severity-low",
   INFO: "bg-severity-info",
+};
+
+// ---- G5: exceptions (matters), findings & priorities ----
+
+export const EXCEPTION_STATUS_LABELS_AR: Record<ExceptionStatus, string> = {
+  OPEN: "مفتوحة",
+  UNDER_INVESTIGATION: "قيد الفحص",
+  CONCLUDED_WITH_FINDING: "منتهية بنتيجة",
+  CLOSED_NO_FINDING: "مغلقة بلا نتيجة",
+};
+
+export const EXCEPTION_STATUS_BADGE: Record<ExceptionStatus, string> = {
+  OPEN: "bg-severity-info/10 text-severity-info ring-severity-info/30",
+  UNDER_INVESTIGATION:
+    "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
+  CONCLUDED_WITH_FINDING:
+    "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
+  CLOSED_NO_FINDING:
+    "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5",
+};
+
+export const FINDING_STATUS_LABELS_AR: Record<FindingStatus, string> = {
+  DRAFT: "مسودة",
+  IN_REVIEW: "قيد المراجعة",
+  CONCLUDED: "معتمدة",
+  WITHDRAWN: "مسحوبة",
+};
+
+export const FINDING_STATUS_BADGE: Record<FindingStatus, string> = {
+  DRAFT: "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5",
+  IN_REVIEW: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
+  CONCLUDED: "bg-severity-low/10 text-severity-low ring-severity-low/30",
+  WITHDRAWN: "bg-severity-critical/10 text-severity-critical ring-severity-critical/30",
+};
+
+export const MATTER_PRIORITY_LABELS_AR: Record<MatterPriority, string> = {
+  LOW: "منخفضة",
+  MEDIUM: "متوسطة",
+  HIGH: "عالية",
+};
+
+export const MATTER_PRIORITY_BADGE: Record<MatterPriority, string> = {
+  LOW: "bg-severity-low/10 text-severity-low ring-severity-low/30",
+  MEDIUM: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
+  HIGH: "bg-severity-high/10 text-severity-high ring-severity-high/30",
 };

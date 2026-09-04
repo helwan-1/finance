@@ -20,6 +20,9 @@ export type Permission =
   | "rules:view"
   | "rules:manage"
   | "rules:run"
+  | "findings:view"
+  | "findings:manage"
+  | "findings:review"
   | "engagement:manage";
 
 const ALL: Permission[] = [
@@ -35,6 +38,9 @@ const ALL: Permission[] = [
   "rules:view",
   "rules:manage",
   "rules:run",
+  "findings:view",
+  "findings:manage",
+  "findings:review",
   "engagement:manage",
 ];
 
@@ -45,6 +51,7 @@ const READ_ONLY: Permission[] = [
   "analytics:view",
   "auditlog:view",
   "rules:view",
+  "findings:view",
 ];
 
 const FIELD_WORK: Permission[] = [
@@ -54,12 +61,13 @@ const FIELD_WORK: Permission[] = [
   "reconciliation:run",
   "data:export",
   "rules:run",
+  "findings:manage",
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ADMIN: ALL,
   PARTNER: ALL,
-  MANAGER: [...FIELD_WORK, "rules:manage", "engagement:manage"],
+  MANAGER: [...FIELD_WORK, "rules:manage", "engagement:manage", "findings:review"],
   SENIOR: FIELD_WORK,
   STAFF: [
     "documents:view",
@@ -68,8 +76,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "reconciliation:view",
     "analytics:view",
     "rules:view",
+    "findings:view",
   ],
-  REVIEWER: READ_ONLY,
+  REVIEWER: [...READ_ONLY, "findings:review"],
 };
 
 /** Whether a role holds a given permission. */
