@@ -1575,3 +1575,268 @@ model AuditResultReview {
   @@index([auditFirmId, auditResultId])
   @@map("audit_result_reviews")
 }
+
+// ============================================================================
+// G5 — PROFESSIONAL DISPOSITION & FINDINGS (additive; relationless FKs → G4/G0).
+// All foreign keys, RLS, grants, triggers, CHECKs and the category seed are
+// hand-authored in migration 20260903000000_g5_disposition_findings. No
+// @relation to frozen G4 models (avoids back-relation churn / phantom diffs).
+// ============================================================================
+
+enum AuditDispositionAction {
+  MARK_UNDER_REVIEW
+  MARK_NOT_RELEVANT
+  MARK_FALSE_POSITIVE
+  MARK_EXPLAINED
+  REQUIRE_INVESTIGATION
+  LINK_TO_EXCEPTION
+  UNLINK_FROM_EXCEPTION
+}
+
+enum AuditResultDispositionKind {
+  UNREVIEWED
+  UNDER_REVIEW
+  DISPOSED
+  INVESTIGATING
+  LINKED
+}
+
+enum AuditExceptionStatus {
+  OPEN
+  UNDER_INVESTIGATION
+  CONCLUDED_WITH_FINDING
+  CLOSED_NO_FINDING
+}
+
+enum AuditExceptionEventType {
+  CREATE
+  STATUS
+  OWNER
+  NARRATIVE
+  LINK
+  UNLINK
+  MERGE
+  SPLIT
+  REOPEN
+}
+
+enum AuditFindingStatus {
+  DRAFT
+  IN_REVIEW
+  CONCLUDED
+  WITHDRAWN
+}
+
+enum AuditFindingReviewAction {
+  SUBMIT
+  APPROVE
+  RETURN
+  WITHDRAW
+  SUPERSEDE
+}
+
+enum AuditMatterPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// Derived per-result disposition projection + concurrency anchor (NOT authoritative).
+model AuditResultDispositionState {
+  id             String                     @id @default(cuid())
+  auditFirmId    String
+  auditResultId  String
+  currentState   AuditResultDispositionKind @default(UNREVIEWED)
+  latestEventSeq Int                        @default(0)
+  version        Int                        @default(0)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, auditResultId])
+  @@index([auditFirmId])
+  @@map("audit_result_disposition_states")
+}
+
+/// Authoritative append-only result disposition history.
+model AuditResultDispositionEvent {
+  id             String                 @id @default(cuid())
+  auditFirmId    String
+  auditResultId  String
+  eventSeq       Int
+  action         AuditDispositionAction
+  actorId        String
+  exceptionId    String?
+  note           String?
+  idempotencyKey String
+  createdAt      DateTime               @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, auditResultId, eventSeq])
+  @@unique([auditFirmId, auditResultId, actorId, action, idempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, auditResultId])
+  @@map("audit_result_disposition_events")
+}
+
+/// Engagement-scoped professional matter (mutable header; authoritative history in events).
+model AuditException {
+  id                     String               @id @default(cuid())
+  auditFirmId            String
+  engagementId           String
+  matterCorrelationKey   String?
+  currentStatus          AuditExceptionStatus @default(OPEN)
+  currentOwnerId         String?
+  currentTitle           String
+  currentTitleAr         String?
+  currentDescription     String?
+  priority               AuditMatterPriority  @default(MEDIUM)
+  membershipFingerprint  String?
+  latestEventSeq         Int                  @default(0)
+  version                Int                  @default(0)
+  createdById            String
+  creationIdempotencyKey String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, creationIdempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, engagementId])
+  @@index([auditFirmId, matterCorrelationKey])
+  @@map("audit_exceptions")
+}
+
+/// Authoritative append-only single Exception timeline (incl. LINK/UNLINK).
+model AuditExceptionEvent {
+  id                String                  @id @default(cuid())
+  auditFirmId       String
+  exceptionId       String
+  engagementId      String
+  eventSeq          Int
+  eventType         AuditExceptionEventType
+  actorId           String
+  auditResultId     String?
+  toStatus          AuditExceptionStatus?
+  toOwnerId         String?
+  title             String?
+  titleAr           String?
+  description       String?
+  targetExceptionId String?
+  note              String?
+  idempotencyKey    String
+  createdAt         DateTime                @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, exceptionId, eventSeq])
+  @@unique([auditFirmId, exceptionId, actorId, eventType, idempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, exceptionId])
+  @@map("audit_exception_events")
+}
+
+/// Active result-membership projection (authoritative history = AuditExceptionEvent LINK/UNLINK).
+model AuditExceptionResultLink {
+  id            String   @id @default(cuid())
+  auditFirmId   String
+  exceptionId   String
+  engagementId  String
+  auditResultId String
+  active        Boolean  @default(true)
+  lastEventSeq  Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, exceptionId, auditResultId])
+  @@index([auditFirmId])
+  @@index([auditFirmId, exceptionId])
+  @@index([auditFirmId, auditResultId])
+  @@map("audit_exception_result_links")
+}
+
+/// Finding header (1:N under an Exception). Content is versioned; status/currentVersionId are projections.
+model AuditFinding {
+  id                     String             @id @default(cuid())
+  auditFirmId            String
+  engagementId           String
+  exceptionId            String
+  currentStatus          AuditFindingStatus @default(DRAFT)
+  currentVersionId       String?
+  latestReviewSeq        Int                @default(0)
+  version                Int                @default(0)
+  createdById            String
+  creationIdempotencyKey String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, creationIdempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, exceptionId])
+  @@index([auditFirmId, engagementId])
+  @@map("audit_findings")
+}
+
+/// Immutable, versioned professional Finding content snapshot.
+model AuditFindingVersion {
+  id                        String   @id @default(cuid())
+  auditFirmId               String
+  findingId                 String
+  versionNo                 Int
+  category                  String
+  condition                 String
+  criteria                  String
+  cause                     String
+  effect                    String
+  auditorConclusion         String
+  recommendation            String?
+  observedAmount            Decimal? @db.Decimal(24, 6)
+  observedCurrency          String?
+  estimatedExposureAmount   Decimal? @db.Decimal(24, 6)
+  estimatedExposureCurrency String?
+  preparedById              String
+  preparedAt                DateTime @default(now())
+  contentHash               String
+  idempotencyKey            String?
+  createdAt                 DateTime @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, findingId, versionNo])
+  @@unique([auditFirmId, findingId, idempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, findingId])
+  @@map("audit_finding_versions")
+}
+
+/// Authoritative append-only Finding review history; approval binds to an exact version.
+model AuditFindingReviewEvent {
+  id               String                   @id @default(cuid())
+  auditFirmId      String
+  findingId        String
+  findingVersionId String
+  eventSeq         Int
+  action           AuditFindingReviewAction
+  actorId          String
+  note             String?
+  idempotencyKey   String
+  createdAt        DateTime                 @default(now())
+
+  @@unique([auditFirmId, id])
+  @@unique([auditFirmId, findingId, eventSeq])
+  @@unique([auditFirmId, findingId, actorId, action, idempotencyKey])
+  @@index([auditFirmId])
+  @@index([auditFirmId, findingId])
+  @@map("audit_finding_review_events")
+}
+
+/// Controlled global finding-category taxonomy (seeded; not tenant-scoped; read-only to app).
+model AuditFindingCategoryRef {
+  code      String  @id
+  label     String
+  labelAr   String
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  @@map("audit_finding_category_refs")
+}
