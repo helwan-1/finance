@@ -2,16 +2,13 @@
  * G5 demo seed — populates the "النتائج والأحكام" screen with real data so the
  * professional-disposition workflow can be seen end to end.
  *
- * It is additive and safe to re-run: it skips creating demo matters if they
- * already exist. It uses the FIRST engagement in the database and ensures every
- * firm user is a member of it (so whoever is logged in can use the feature).
+ * It seeds EVERY engagement in the database (idempotently, keys scoped per
+ * engagement) so that whichever engagement the UI's switcher selects by default
+ * always has data — and prints a diagnostic table of engagements + counts.
  *
- * What it creates:
- *   - membership rows so exceptions/dispositions are allowed (DB-enforced),
- *   - 3 minimal G4 audit results for the engagement,
- *   - one CONCLUDED matter (finding drafted → submitted → approved → concluded),
- *   - one OPEN matter with a DRAFT finding,
- *   - one free audit result left un-linked so you can create your own matter.
+ * Per engagement it ensures firm users are members, fabricates minimal G4 audit
+ * results, and creates one CONCLUDED matter + one OPEN matter with a DRAFT
+ * finding, leaving one spare result free to try in the UI. Safe to re-run.
  *
  * Run: npm run seed:g5
  */
@@ -96,44 +93,33 @@ function demoContent(category: string): FindingContentInput {
   };
 }
 
-async function main(): Promise<void> {
-  // Match the app's engagement switcher, which selects the first engagement from
-  // /api/engagements ordered by [fiscalYear desc, createdAt desc]. Seeding the
-  // SAME engagement the UI shows by default avoids an empty screen.
-  const eng = await prisma.auditEngagement.findFirst({
-    orderBy: [{ fiscalYear: "desc" }, { createdAt: "desc" }],
-  });
-  if (!eng) {
-    throw new Error("لا يوجد ارتباط (engagement) في قاعدة البيانات. أنشئ ارتباطًا من التطبيق أولًا.");
-  }
+interface Eng {
+  id: string;
+  auditFirmId: string;
+  title: string;
+  titleAr: string | null;
+  fiscalYear: number;
+}
+
+async function seedEngagement(eng: Eng): Promise<void> {
   const firm = eng.auditFirmId;
   const engagementId = eng.id;
-  /** Engagement-scoped idempotency keys (unique per firm, per engagement). */
   const K = (s: string) => `seed-${engagementId}-${s}`;
-  console.log(`Engagement: ${eng.titleAr ?? eng.title} — ${eng.fiscalYear}  [${engagementId}] (firm ${firm})`);
 
-  // Ensure at least two users, and make every firm user a member.
-  const users = await prisma.user.findMany({ where: { auditFirmId: firm }, select: { id: true, role: true } });
-  let preparerId = users[0]?.id ?? (await ensureUser(firm, "STAFF", "prep"));
-  let reviewerId = users.find((u) => u.id !== preparerId)?.id ?? (await ensureUser(firm, "MANAGER", "rev"));
+  // Ensure the firm has two users and make every firm user a member here.
+  const users = await prisma.user.findMany({ where: { auditFirmId: firm }, select: { id: true } });
+  const preparerId = users[0]?.id ?? (await ensureUser(firm, "STAFF", "prep"));
+  const reviewerId = users.find((u) => u.id !== preparerId)?.id ?? (await ensureUser(firm, "MANAGER", "rev"));
   const allUserIds = new Set<string>([...users.map((u) => u.id), preparerId, reviewerId]);
   for (const uid of allUserIds) await ensureMember(firm, engagementId, uid);
-  console.log(`Members ensured for ${allUserIds.size} user(s). preparer=${preparerId} reviewer=${reviewerId}`);
 
-  // Re-runnable helpers: resolve existing state by stable idempotency keys.
   const exByKey = (key: string) =>
     withTenantContext(firm, (t) =>
-      t.auditException.findFirst({
-        where: { engagementId, creationIdempotencyKey: key },
-        select: { id: true, currentStatus: true },
-      }),
+      t.auditException.findFirst({ where: { engagementId, creationIdempotencyKey: key }, select: { id: true, currentStatus: true } }),
     );
   const findingOf = (exceptionId: string) =>
     withTenantContext(firm, (t) =>
-      t.auditFinding.findFirst({
-        where: { exceptionId },
-        select: { id: true, currentStatus: true, currentVersionId: true },
-      }),
+      t.auditFinding.findFirst({ where: { exceptionId }, select: { id: true, currentStatus: true, currentVersionId: true } }),
     );
 
   let createdAny = false;
@@ -173,7 +159,6 @@ async function main(): Promise<void> {
   if (ex1now && ex1now.currentStatus !== "CONCLUDED_WITH_FINDING") {
     await concludeException(firm, { exceptionId: ex1.id, actorId: preparerId, idempotencyKey: K("c1") });
   }
-  console.log(`Matter 1 ready (CONCLUDED): ${ex1.id}`);
 
   // ---- Matter 2: OPEN with a DRAFT finding ----
   let ex2 = await exByKey(K("2"));
@@ -195,12 +180,37 @@ async function main(): Promise<void> {
       content: demoContent("DATA_QUALITY_MATTER"), idempotencyKey: K("f2"),
     });
   }
-  console.log(`Matter 2 ready (OPEN, draft finding): ${ex2.id}`);
 
-  // A spare, un-linked result so you can create your own matter from the UI.
   if (createdAny) await fabricateResult(firm, engagementId);
+}
 
-  console.log("\n✅ Seed complete. Refresh /findings to see two matters + a spare audit result.");
+async function main(): Promise<void> {
+  const engagements = await prisma.auditEngagement.findMany({
+    orderBy: [{ fiscalYear: "desc" }, { createdAt: "desc" }],
+    select: { id: true, auditFirmId: true, title: true, titleAr: true, fiscalYear: true },
+  });
+  if (engagements.length === 0) {
+    throw new Error("لا يوجد ارتباط (engagement) في قاعدة البيانات. أنشئ ارتباطًا من التطبيق أولًا.");
+  }
+
+  console.log(`Found ${engagements.length} engagement(s):`);
+  for (const e of engagements) {
+    console.log(`  - ${e.titleAr ?? e.title} — ${e.fiscalYear}  [${e.id}]  firm=${e.auditFirmId}`);
+  }
+  console.log("");
+
+  // Seed EVERY engagement so whichever one the UI selects by default has data.
+  for (const e of engagements) {
+    console.log(`Seeding: ${e.titleAr ?? e.title} — ${e.fiscalYear} …`);
+    await seedEngagement(e);
+  }
+
+  console.log("\n--- Exception counts per engagement ---");
+  for (const e of engagements) {
+    const n = await withTenantContext(e.auditFirmId, (t) => t.auditException.count({ where: { engagementId: e.id } }));
+    console.log(`  ${e.titleAr ?? e.title} — ${e.fiscalYear}: ${n} exception(s)`);
+  }
+  console.log("\n✅ Seed complete. Refresh /findings — the selected engagement now has matters.");
 }
 
 main()
