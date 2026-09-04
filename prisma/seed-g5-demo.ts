@@ -97,13 +97,20 @@ function demoContent(category: string): FindingContentInput {
 }
 
 async function main(): Promise<void> {
-  const eng = await prisma.auditEngagement.findFirst({ orderBy: { createdAt: "asc" } });
+  // Match the app's engagement switcher, which selects the first engagement from
+  // /api/engagements ordered by [fiscalYear desc, createdAt desc]. Seeding the
+  // SAME engagement the UI shows by default avoids an empty screen.
+  const eng = await prisma.auditEngagement.findFirst({
+    orderBy: [{ fiscalYear: "desc" }, { createdAt: "desc" }],
+  });
   if (!eng) {
     throw new Error("لا يوجد ارتباط (engagement) في قاعدة البيانات. أنشئ ارتباطًا من التطبيق أولًا.");
   }
   const firm = eng.auditFirmId;
   const engagementId = eng.id;
-  console.log(`Engagement: ${engagementId} (firm ${firm})`);
+  /** Engagement-scoped idempotency keys (unique per firm, per engagement). */
+  const K = (s: string) => `seed-${engagementId}-${s}`;
+  console.log(`Engagement: ${eng.titleAr ?? eng.title} — ${eng.fiscalYear}  [${engagementId}] (firm ${firm})`);
 
   // Ensure at least two users, and make every firm user a member.
   const users = await prisma.user.findMany({ where: { auditFirmId: firm }, select: { id: true, role: true } });
@@ -132,14 +139,14 @@ async function main(): Promise<void> {
   let createdAny = false;
 
   // ---- Matter 1: driven all the way to CONCLUDED ----
-  let ex1 = await exByKey("seed-demo-1");
+  let ex1 = await exByKey(K("1"));
   if (!ex1) {
     const r = await fabricateResult(firm, engagementId);
     const c = await createExceptionFromResult(firm, {
       engagementId, createdById: preparerId,
       title: "Debit/credit integrity breach", titleAr: "مخالفة سلامة القيد المزدوج",
       description: "مسألة تجريبية مُنشأة بالبذرة لعرض الدورة الكاملة.",
-      priority: "HIGH", firstResultId: r, idempotencyKey: "seed-demo-1",
+      priority: "HIGH", firstResultId: r, idempotencyKey: K("1"),
     });
     ex1 = { id: c.exceptionId, currentStatus: "OPEN" };
     createdAny = true;
@@ -148,35 +155,35 @@ async function main(): Promise<void> {
   if (!f1) {
     const c = await createFinding(firm, {
       exceptionId: ex1.id, engagementId, createdById: preparerId,
-      content: demoContent("CONTROL_DEFICIENCY"), idempotencyKey: "seed-demo-f1",
+      content: demoContent("CONTROL_DEFICIENCY"), idempotencyKey: K("f1"),
     });
     f1 = { id: c.findingId, currentStatus: "DRAFT", currentVersionId: c.versionId };
   }
   if (f1.currentStatus === "DRAFT") {
-    await submitFinding(firm, { findingId: f1.id, actorId: preparerId, idempotencyKey: "seed-demo-s1" });
+    await submitFinding(firm, { findingId: f1.id, actorId: preparerId, idempotencyKey: K("s1") });
     f1 = { ...f1, currentStatus: "IN_REVIEW" };
   }
   if (f1.currentStatus === "IN_REVIEW" && f1.currentVersionId) {
     await reviewFinding(firm, {
       findingId: f1.id, actorId: reviewerId, action: "APPROVE",
-      findingVersionId: f1.currentVersionId, note: "معتمدة", idempotencyKey: "seed-demo-r1",
+      findingVersionId: f1.currentVersionId, note: "معتمدة", idempotencyKey: K("r1"),
     });
   }
-  const ex1now = await exByKey("seed-demo-1");
+  const ex1now = await exByKey(K("1"));
   if (ex1now && ex1now.currentStatus !== "CONCLUDED_WITH_FINDING") {
-    await concludeException(firm, { exceptionId: ex1.id, actorId: preparerId, idempotencyKey: "seed-demo-c1" });
+    await concludeException(firm, { exceptionId: ex1.id, actorId: preparerId, idempotencyKey: K("c1") });
   }
   console.log(`Matter 1 ready (CONCLUDED): ${ex1.id}`);
 
   // ---- Matter 2: OPEN with a DRAFT finding ----
-  let ex2 = await exByKey("seed-demo-2");
+  let ex2 = await exByKey(K("2"));
   if (!ex2) {
     const r = await fabricateResult(firm, engagementId);
     const c = await createExceptionFromResult(firm, {
       engagementId, createdById: preparerId,
       title: "Second matter under review", titleAr: "مسألة قيد الإعداد",
       description: "مسألة تجريبية ثانية بنتيجة في حالة مسودة.",
-      priority: "MEDIUM", firstResultId: r, idempotencyKey: "seed-demo-2",
+      priority: "MEDIUM", firstResultId: r, idempotencyKey: K("2"),
     });
     ex2 = { id: c.exceptionId, currentStatus: "OPEN" };
     createdAny = true;
@@ -185,7 +192,7 @@ async function main(): Promise<void> {
   if (!f2) {
     await createFinding(firm, {
       exceptionId: ex2.id, engagementId, createdById: preparerId,
-      content: demoContent("DATA_QUALITY_MATTER"), idempotencyKey: "seed-demo-f2",
+      content: demoContent("DATA_QUALITY_MATTER"), idempotencyKey: K("f2"),
     });
   }
   console.log(`Matter 2 ready (OPEN, draft finding): ${ex2.id}`);
