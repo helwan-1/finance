@@ -24,12 +24,17 @@ async function fetchResults(engagementId: string): Promise<AuditResultsResponse>
 export function NewExceptionDialog({
   engagementId,
   onClose,
+  presetResultId,
+  presetResultLabel,
 }: {
   engagementId: string;
   onClose: () => void;
+  /** When set, the source result is fixed and the picker is hidden. */
+  presetResultId?: string;
+  presetResultLabel?: string;
 }) {
   const queryClient = useQueryClient();
-  const [firstResultId, setFirstResultId] = useState("");
+  const [firstResultId, setFirstResultId] = useState(presetResultId ?? "");
   const [title, setTitle] = useState("");
   const [titleAr, setTitleAr] = useState("");
   const [description, setDescription] = useState("");
@@ -39,7 +44,7 @@ export function NewExceptionDialog({
   const { data, isPending } = useQuery({
     queryKey: ["audit-results", engagementId],
     queryFn: () => fetchResults(engagementId),
-    enabled: Boolean(engagementId),
+    enabled: Boolean(engagementId) && !presetResultId,
   });
 
   const results = data?.results ?? [];
@@ -65,6 +70,7 @@ export function NewExceptionDialog({
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-results"] });
       onClose();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "فشل إنشاء الاستثناء"),
@@ -95,7 +101,11 @@ export function NewExceptionDialog({
 
         <div className="space-y-1">
           <label className="text-sm font-medium">نتيجة التدقيق المصدر</label>
-          {isPending ? (
+          {presetResultId ? (
+            <p className="rounded-lg border p-3 text-sm font-mono">
+              {presetResultLabel ?? presetResultId}
+            </p>
+          ) : isPending ? (
             <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل النتائج…</p>
           ) : results.length === 0 ? (
             <p className="rounded-lg border p-3 text-sm text-[rgb(var(--muted))]">

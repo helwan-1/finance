@@ -2,6 +2,8 @@ import type {
   AnomalyRuleCode,
   AnomalySeverity,
   AnomalyStatus,
+  DispositionActionKind,
+  DispositionStateKind,
   DocumentStatus,
   DocumentType,
   ExceptionStatus,
@@ -173,4 +175,30 @@ export const MATTER_PRIORITY_BADGE: Record<MatterPriority, string> = {
   LOW: "bg-severity-low/10 text-severity-low ring-severity-low/30",
   MEDIUM: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
   HIGH: "bg-severity-high/10 text-severity-high ring-severity-high/30",
+};
+
+// ---- G5: audit-result professional dispositions ----
+
+export const DISPOSITION_STATE_LABELS_AR: Record<DispositionStateKind, string> = {
+  UNREVIEWED: "لم تُراجَع",
+  UNDER_REVIEW: "قيد المراجعة",
+  DISPOSED: "تم البتّ فيها",
+  INVESTIGATING: "قيد الفحص",
+  LINKED: "مرتبطة بمسألة",
+};
+
+export const DISPOSITION_STATE_BADGE: Record<DispositionStateKind, string> = {
+  UNREVIEWED: "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5",
+  UNDER_REVIEW: "bg-severity-medium/10 text-severity-medium ring-severity-medium/30",
+  DISPOSED: "bg-severity-low/10 text-severity-low ring-severity-low/30",
+  INVESTIGATING: "bg-severity-high/10 text-severity-high ring-severity-high/30",
+  LINKED: "bg-severity-info/10 text-severity-info ring-severity-info/30",
+};
+
+export const DISPOSITION_ACTION_LABELS_AR: Record<DispositionActionKind, string> = {
+  MARK_UNDER_REVIEW: "وضعها قيد المراجعة",
+  MARK_NOT_RELEVANT: "غير ذات صلة",
+  MARK_FALSE_POSITIVE: "إيجابية كاذبة",
+  MARK_EXPLAINED: "مُفسَّرة",
+  REQUIRE_INVESTIGATION: "تتطلّب فحصًا",
 };

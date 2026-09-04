@@ -302,3 +302,18 @@ export interface FindingCategoryDTO {
 export interface FindingCategoriesResponse {
   categories: FindingCategoryDTO[];
 }
+
+/** Professional disposition actions recordable against a G4 audit result. */
+export type DispositionActionKind =
+  | "MARK_UNDER_REVIEW"
+  | "MARK_NOT_RELEVANT"
+  | "MARK_FALSE_POSITIVE"
+  | "MARK_EXPLAINED"
+  | "REQUIRE_INVESTIGATION";
+
+export type DispositionStateKind =
+  | "UNREVIEWED"
+  | "UNDER_REVIEW"
+  | "DISPOSED"
+  | "INVESTIGATING"
+  | "LINKED";

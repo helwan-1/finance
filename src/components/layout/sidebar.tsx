@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Scale,
   Gavel,
+  ClipboardList,
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
@@ -30,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
   { labelAr: "قواعد التدقيق", icon: Scale, href: "/rules" },
   { labelAr: "الحالات الشاذة", icon: ShieldAlert, href: "/anomalies" },
+  { labelAr: "نتائج التدقيق", icon: ClipboardList, href: "/audit-results" },
   { labelAr: "النتائج والأحكام", icon: Gavel, href: "/findings" },
   { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
   { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
