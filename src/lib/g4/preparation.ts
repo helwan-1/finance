@@ -6,6 +6,21 @@ import { fingerprint, fields, seq, str, int, foldMember, sealFold, FOLD_SEED } f
 const RESOLUTION_ALGO_VERSION = "g4res.1";
 const DEFAULT_BATCH = 500;
 
+/**
+ * Engine-authoritative preparation-completeness failure (G6-DEBT-005). Thrown by
+ * sealPreparation when any required population chunk is still unfinished. Typed so
+ * every caller — the G6 HTTP boundary and any future internal/background driver —
+ * fails deterministically without string matching. The G6 adapter maps this to
+ * 409 PREPARATION_NOT_COMPLETE, matching its own early boundary guard.
+ */
+export class PreparationIncompleteError extends Error {
+  readonly code = "PREPARATION_NOT_COMPLETE" as const;
+  constructor(public readonly pendingChunks: number) {
+    super(`preparation materialization incomplete (${pendingChunks} population chunk(s) pending)`);
+    this.name = "PreparationIncompleteError";
+  }
+}
+
 interface Requirements {
   requiredDatasetKinds?: string[];
   requiresAccountMapping?: boolean;
@@ -254,9 +269,25 @@ export async function materializePopulation(
 /** Stage A step 3: seal the generation — compute expected counts + manifest hash → COMPLETE. */
 export async function sealPreparation(auditFirmId: string, prepId: string): Promise<{ manifestHash: string }> {
   return withTenantContext(auditFirmId, async (tx) => {
+    // Lock THIS generation row (narrow — never serializes unrelated runs) so two
+    // concurrent seals of the same prep cannot both proceed, and the status +
+    // completeness reads below are a stable snapshot for this sealing.
+    await tx.$queryRaw`SELECT "id" FROM "audit_run_preparations" WHERE "id" = ${prepId} FOR UPDATE`;
+
     const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { id: true, status: true, runId: true } });
     if (!prep) throw new Error("preparation not found");
     if (prep.status !== "PREPARING") throw new Error(`preparation not sealable (status=${prep.status})`);
+
+    // ENGINE COMPLETENESS INVARIANT (G6-DEBT-005): refuse to seal while any
+    // required population chunk is unfinished. beginPreparation records each
+    // eligible (testVersion,dataset) as a chunk with done=false and defers its
+    // scope-resolution + population fingerprint until materializePopulation
+    // finishes it; both commit atomically and `done` is monotonic (only ever set
+    // true), so once zero unfinished chunks are observed under this locked
+    // snapshot the population is transactionally complete. Fail deterministically
+    // BEFORE any status/manifest/count write — no partial seal, no side effects.
+    const pendingChunks = await tx.auditRunPrepChunk.count({ where: { preparationId: prepId, done: false } });
+    if (pendingChunks > 0) throw new PreparationIncompleteError(pendingChunks);
 
     const [datasets, testVersions, resolutions, members, mappingPins] = await Promise.all([
       tx.auditRunDataset.count({ where: { preparationId: prepId } }),

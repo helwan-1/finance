@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { RunAccessError, RunStateError, RunValidationError, RunConfigError } from "./run-access";
+import { PreparationIncompleteError } from "@/lib/g4/preparation";
 
 /** Prisma connection/availability error codes (DB unreachable / timed out). */
 const DB_UNAVAILABLE_CODES = new Set(["P1000", "P1001", "P1002", "P1008", "P1017"]);
@@ -34,6 +35,11 @@ export function runErrorResponse(e: unknown): NextResponse {
   }
   if (e instanceof RunStateError) {
     return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+  }
+  // Engine-authoritative completeness failure (a direct/internal caller reaching
+  // sealPreparation without the boundary precheck) maps to the SAME contract.
+  if (e instanceof PreparationIncompleteError) {
+    return NextResponse.json({ error: e.message, code: "PREPARATION_NOT_COMPLETE" }, { status: 409 });
   }
   if (e instanceof RunValidationError) {
     return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
