@@ -23,10 +23,10 @@ export async function POST(
   try {
     body = (await request.json()) as Body;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body", code: "VALIDATION" }, { status: 422 });
   }
   const prepId = typeof body.prepId === "string" ? body.prepId.trim() : "";
-  if (!prepId) return NextResponse.json({ error: "prepId is required" }, { status: 400 });
+  if (!prepId) return NextResponse.json({ error: "prepId is required", code: "VALIDATION" }, { status: 422 });
 
   try {
     const out = await sealRunPreparation(

@@ -43,10 +43,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     body = (await request.json()) as CreateBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body", code: "VALIDATION" }, { status: 422 });
   }
   const engagementId = typeof body.engagementId === "string" ? body.engagementId.trim() : "";
-  if (!engagementId) return NextResponse.json({ error: "engagementId is required" }, { status: 400 });
+  if (!engagementId) return NextResponse.json({ error: "engagementId is required", code: "VALIDATION" }, { status: 422 });
   const maxAttempts = typeof body.maxAttempts === "number" ? body.maxAttempts : undefined;
   const label = typeof body.label === "string" && body.label.trim() ? body.label.trim() : null;
   const supersedesRunId = typeof body.supersedesRunId === "string" && body.supersedesRunId.trim() ? body.supersedesRunId.trim() : null;

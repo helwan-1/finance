@@ -67,6 +67,46 @@ export class RunAccessError extends Error {
   }
 }
 
+/**
+ * Deterministic run/preparation lifecycle-state failure → HTTP 409. The boundary
+ * pre-checks the run/preparation state (which it already reads while authorizing)
+ * and raises a stable code, so a state failure never reaches the client as a raw
+ * G4 message. The underlying G4 command remains the authority and re-validates.
+ */
+export type RunStateErrorCode = "INVALID_RUN_STATE" | "PREPARATION_NOT_COMPLETE";
+export class RunStateError extends Error {
+  readonly status = 409;
+  constructor(public readonly code: RunStateErrorCode, message: string) {
+    super(message);
+    this.name = "RunStateError";
+  }
+}
+
+/** Malformed/invalid request input → HTTP 422 VALIDATION. */
+export class RunValidationError extends Error {
+  readonly status = 422;
+  readonly code = "VALIDATION" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "RunValidationError";
+  }
+}
+
+/**
+ * Deterministically-identifiable G4 configuration failure (e.g. a selected test
+ * that does not exist or has no ACTIVE current version, or a missing dataset) →
+ * HTTP 422 CONFIGURATION. Pre-checked at the boundary so a stable code is
+ * returned rather than a raw G4 message; G4 remains the authority.
+ */
+export class RunConfigError extends Error {
+  readonly status = 422;
+  readonly code = "CONFIGURATION" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "RunConfigError";
+  }
+}
+
 /** The actor is derived exclusively from the verified session. */
 export interface RunActor {
   userId: string;
@@ -82,6 +122,13 @@ export interface RunSummary {
   configFingerprint: string | null;
   engineBuildVersion: string | null;
   frozenAt: string | null;
+  // Frozen semantic-scope snapshot (ADR). Read ONLY from the AuditRun frozen
+  // columns — never substituted from current AuditFirm.licenseNo /
+  // AuditEngagement.fiscalYear / a recomputed client key. NULL for DRAFT/unfrozen
+  // runs and for legacy runs frozen before the snapshot existed.
+  frozenFirmLicenseNo: string | null;
+  frozenFiscalYear: number | null;
+  frozenClientSemanticKey: string | null;
   label: string | null;
   maxAttempts: number;
   createdAt: string;
@@ -91,18 +138,23 @@ export interface RunSummary {
 const RUN_SELECT = {
   id: true, engagementId: true, clientCompanyId: true, status: true,
   freezeGeneration: true, configFingerprint: true, engineBuildVersion: true,
-  frozenAt: true, label: true, maxAttempts: true, createdAt: true, updatedAt: true,
+  frozenAt: true, frozenFirmLicenseNo: true, frozenFiscalYear: true, frozenClientSemanticKey: true,
+  label: true, maxAttempts: true, createdAt: true, updatedAt: true,
 } as const;
 
 function toRunSummary(r: {
   id: string; engagementId: string; clientCompanyId: string | null; status: string;
   freezeGeneration: string | null; configFingerprint: string | null; engineBuildVersion: string | null;
-  frozenAt: Date | null; label: string | null; maxAttempts: number; createdAt: Date; updatedAt: Date;
+  frozenAt: Date | null; frozenFirmLicenseNo: string | null; frozenFiscalYear: number | null;
+  frozenClientSemanticKey: string | null; label: string | null; maxAttempts: number; createdAt: Date; updatedAt: Date;
 }): RunSummary {
   return {
     id: r.id, engagementId: r.engagementId, clientCompanyId: r.clientCompanyId, status: r.status,
     freezeGeneration: r.freezeGeneration, configFingerprint: r.configFingerprint,
     engineBuildVersion: r.engineBuildVersion, frozenAt: r.frozenAt ? r.frozenAt.toISOString() : null,
+    // Verbatim from AuditRun frozen columns — no live-master substitution.
+    frozenFirmLicenseNo: r.frozenFirmLicenseNo, frozenFiscalYear: r.frozenFiscalYear,
+    frozenClientSemanticKey: r.frozenClientSemanticKey,
     label: r.label, maxAttempts: r.maxAttempts,
     createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
   };
@@ -207,6 +259,17 @@ export interface CreateRunInput {
   supersedesRunId?: string | null;
 }
 
+/**
+ * Create a DRAFT AuditRun.
+ *
+ * G6-DEBT-001 (create-request idempotency remains OPEN): this endpoint is
+ * INTENTIONALLY NON-IDEMPOTENT. It takes no idempotency key and performs no
+ * dedup — a repeated successful request may create ANOTHER DRAFT AuditRun. The
+ * server MUST NOT auto-retry createRun. No idempotency table/key is introduced
+ * (a DRAFT run carries no authoritative generation and is discardable), so this
+ * is a documented, accepted limitation rather than fake idempotency. Closing it
+ * (a client-supplied creation idempotency key) is deferred future work.
+ */
 export async function createRun(actor: RunActor, input: CreateRunInput): Promise<{ runId: string }> {
   // Membership is checked on the client-supplied engagementId; createDraftRun
   // then creates the run under that SAME engagementId (consistent by
@@ -228,24 +291,69 @@ export interface BeginPreparationInput {
   batchSize?: number;
 }
 
+const PREPARABLE_RUN_STATES = ["DRAFT", "PREPARING"];
+
+/** Deterministic config pre-check: every selected test resolves to an ACTIVE
+ * current version, and every dataset exists — under the caller's firm (RLS).
+ * Raises a stable CONFIGURATION (422) code instead of a raw G4 message. */
+async function assertPreparableConfig(tx: TenantTx, engagementId: string, tests: TestSelection[], datasetIds: string[]): Promise<void> {
+  if (tests.length === 0 || datasetIds.length === 0) {
+    throw new RunValidationError("at least one test and one dataset are required");
+  }
+  for (const sel of tests) {
+    // Firm is already bound by RLS, so a key lookup resolves within the tenant.
+    const t = await tx.auditTest.findFirst({ where: { key: sel.testKey }, select: { currentVersionId: true } });
+    if (!t) throw new RunConfigError(`selected test does not exist: ${sel.testKey}`);
+    if (!t.currentVersionId) throw new RunConfigError(`selected test has no current version: ${sel.testKey}`);
+    const v = await tx.auditTestVersion.findUnique({ where: { id: t.currentVersionId }, select: { status: true } });
+    if (!v || v.status !== "ACTIVE") throw new RunConfigError(`selected test has no ACTIVE current version: ${sel.testKey}`);
+  }
+  for (const dsId of datasetIds) {
+    const ds = await tx.dataset.findUnique({ where: { id: dsId }, select: { engagementId: true } });
+    if (!ds) throw new RunConfigError(`selected dataset does not exist: ${dsId}`);
+    if (ds.engagementId !== engagementId) throw new RunConfigError(`selected dataset is not in the run engagement: ${dsId}`);
+  }
+}
+
 export async function beginRunPreparation(
   actor: RunActor, runId: string, input: BeginPreparationInput,
 ): Promise<{ prepId: string; generationNo: number }> {
-  await withTenantContext(actor.auditFirmId, (tx) => authorizeRun(tx, actor, runId));
+  await withTenantContext(actor.auditFirmId, async (tx) => {
+    const run = await authorizeRun(tx, actor, runId);
+    if (!PREPARABLE_RUN_STATES.includes(run.status)) {
+      throw new RunStateError("INVALID_RUN_STATE", `run is not preparable in status ${run.status}`);
+    }
+    await assertPreparableConfig(tx, run.engagementId, input.tests, input.datasetIds);
+  });
   return beginPreparation(actor.auditFirmId, { runId, tests: input.tests, datasetIds: input.datasetIds, batchSize: input.batchSize });
 }
 
-/** Assert a preparation belongs to `runId` within the caller's firm (RLS). */
-async function assertPrepBelongsToRun(tx: TenantTx, prepId: string, runId: string): Promise<void> {
-  const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { runId: true } });
+/** Assert a preparation belongs to `runId` within the caller's firm (RLS); returns its status. */
+async function assertPrepBelongsToRun(tx: TenantTx, prepId: string, runId: string): Promise<{ status: string }> {
+  const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { runId: true, status: true } });
   if (!prep) throw new RunAccessError("NOT_FOUND", "preparation not found");
   if (prep.runId !== runId) throw new RunAccessError("NOT_FOUND", "preparation does not belong to run");
+  return { status: prep.status };
 }
 
 export async function sealRunPreparation(actor: RunActor, runId: string, prepId: string): Promise<{ manifestHash: string }> {
   await withTenantContext(actor.auditFirmId, async (tx) => {
     await authorizeRun(tx, actor, runId);
-    await assertPrepBelongsToRun(tx, prepId, runId);
+    const prep = await assertPrepBelongsToRun(tx, prepId, runId);
+    // A generation is sealable only while PREPARING; already-sealed/published is a
+    // lifecycle error, not an incompleteness one.
+    if (prep.status !== "PREPARING") {
+      throw new RunStateError("INVALID_RUN_STATE", `preparation is not sealable in status ${prep.status}`);
+    }
+    // Materialization completeness: every eligible population chunk must be done.
+    // beginPreparation records an eligible (test,dataset) as a prep chunk with
+    // done=false and defers the scope-resolution/population-fingerprint row until
+    // materializePopulation finishes it (preparation.ts). Un-done chunks therefore
+    // mean the population has not been materialized yet.
+    const pendingChunks = await tx.auditRunPrepChunk.count({ where: { preparationId: prepId, done: false } });
+    if (pendingChunks > 0) {
+      throw new RunStateError("PREPARATION_NOT_COMPLETE", `preparation materialization incomplete (${pendingChunks} population chunk(s) pending)`);
+    }
   });
   return sealPreparation(actor.auditFirmId, prepId);
 }
@@ -254,8 +362,14 @@ export async function publishRunForActor(
   actor: RunActor, runId: string, prepId: string,
 ): Promise<{ configFingerprint: string; engineBuildVersion: string }> {
   await withTenantContext(actor.auditFirmId, async (tx) => {
-    await authorizeRun(tx, actor, runId);
-    await assertPrepBelongsToRun(tx, prepId, runId);
+    const run = await authorizeRun(tx, actor, runId);
+    if (!PREPARABLE_RUN_STATES.includes(run.status)) {
+      throw new RunStateError("INVALID_RUN_STATE", `run is not publishable in status ${run.status}`);
+    }
+    const prep = await assertPrepBelongsToRun(tx, prepId, runId);
+    if (prep.status !== "COMPLETE") {
+      throw new RunStateError("PREPARATION_NOT_COMPLETE", `preparation is not complete (status ${prep.status})`);
+    }
   });
   return publishRun(actor.auditFirmId, runId, prepId);
 }

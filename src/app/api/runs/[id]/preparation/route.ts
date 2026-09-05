@@ -27,7 +27,7 @@ export async function POST(
   try {
     body = (await request.json()) as Body;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body", code: "VALIDATION" }, { status: 422 });
   }
 
   const tests = Array.isArray(body.tests)
@@ -39,7 +39,7 @@ export async function POST(
     : [];
   const datasetIds = Array.isArray(body.datasetIds) ? body.datasetIds.filter((d): d is string => typeof d === "string") : [];
   if (tests.length === 0 || datasetIds.length === 0) {
-    return NextResponse.json({ error: "tests[] and datasetIds[] are required" }, { status: 400 });
+    return NextResponse.json({ error: "tests[] and datasetIds[] are required", code: "VALIDATION" }, { status: 422 });
   }
   const batchSize = typeof body.batchSize === "number" ? body.batchSize : undefined;
 
