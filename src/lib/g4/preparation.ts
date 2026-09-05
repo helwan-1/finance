@@ -193,77 +193,153 @@ async function captureMappingPins(tx: TenantTx, auditFirmId: string, datasetId: 
  * persisted in AuditRunPrepChunk so an interrupted run resumes to the SAME
  * fingerprint. Returns { done, fingerprint? }.
  */
+interface BatchStep { finished: boolean; batchCount: number; fp: string | null }
+
+/**
+ * THE authoritative in-transaction materialization of ONE bounded batch for a
+ * single (testVersion,dataset) chunk — the SOLE population-fold implementation,
+ * shared by the targeted `materializePopulation` path and the multi-worker
+ * `claimAndMaterializeBatch` primitive. The CALLER owns the transaction (and any
+ * row claim it holds); this function never opens its own tx and never changes the
+ * deterministic fold (g4pop.2), evidence identity, ordering, or resolution shape.
+ */
+async function materializeBatchInTx(
+  tx: TenantTx, auditFirmId: string, prepId: string, testVersionId: string, datasetId: string, batchSize: number,
+): Promise<BatchStep> {
+  const cursor = await tx.auditRunPrepChunk.findUnique({
+    where: { preparationId_auditTestVersionId_datasetId: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId } },
+    select: { lastSourceRowNo: true, cursorState: true, done: true },
+  });
+  if (cursor?.done) return { finished: true, batchCount: 0, fp: (cursor.cursorState as { fingerprint?: string })?.fingerprint ?? null };
+  if (!cursor) throw new Error("prep chunk missing — beginPreparation must create it for eligible (testVersion,dataset)");
+  const state = (cursor.cursorState as { acc?: string; count?: number; eligibility?: string; unmet?: string[]; predicateHash?: string } | null) ?? {};
+  let acc = state.acc ?? FOLD_SEED;
+  let count = state.count ?? 0;
+  const eligibility = (state.eligibility ?? "ELIGIBLE") as "ELIGIBLE" | "PARTIALLY_ELIGIBLE" | "NOT_ELIGIBLE";
+  const unmet = state.unmet ?? [];
+  const predicateHash = state.predicateHash ?? fingerprint("g4pred.1", str("accepted_records"));
+  const after = cursor.lastSourceRowNo ?? -1;
+
+  const ds = await tx.dataset.findUnique({ where: { id: datasetId }, select: { datasetHash: true } });
+  const recs = await tx.importedRecord.findMany({
+    where: { datasetId, status: { not: "REJECTED" }, sourceRowNo: { gt: after } },
+    orderBy: { sourceRowNo: "asc" }, take: batchSize,
+    select: { sourceRowNo: true, rawHash: true },
+  });
+  let lastRow = after;
+  for (const r of recs) {
+    const eoi = importedRecordEOI({ datasetHash: ds!.datasetHash!, sourceRowNo: r.sourceRowNo, rawHash: r.rawHash });
+    await tx.auditRunScopeMember.create({
+      data: { auditFirmId, preparationId: prepId, auditTestVersionId: testVersionId, datasetId, sourceRowNo: r.sourceRowNo, evidenceType: "IMPORTED_RECORD", eoiFrameHash: eoi, contentHash: r.rawHash },
+    });
+    acc = foldMember(acc, Buffer.from(eoi, "hex"));
+    count += 1;
+    lastRow = r.sourceRowNo;
+  }
+  const finished = recs.length < batchSize;
+  const fp = finished ? sealFold("g4pop.2", acc, count) : null;
+  // Chunk always exists (created by beginPreparation) — update the running fold.
+  await tx.auditRunPrepChunk.update({
+    where: { preparationId_auditTestVersionId_datasetId: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId } },
+    data: { lastSourceRowNo: lastRow, cursorState: { acc, count, eligibility, unmet, predicateHash, ...(fp ? { fingerprint: fp } : {}) } as object, done: finished },
+  });
+  if (finished) {
+    // Single, final, immutable resolution insert — now that the population
+    // fingerprint is known. audit_app has INSERT-only on this table.
+    const existing = await tx.auditRunScopeResolution.findFirst({
+      where: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId }, select: { id: true },
+    });
+    if (!existing) {
+      const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { runId: true } });
+      await tx.auditRunScopeResolution.create({
+        data: {
+          auditFirmId, preparationId: prepId, runId: prep!.runId, auditTestVersionId: testVersionId, datasetId,
+          eligibility, resolutionAlgorithmVersion: RESOLUTION_ALGO_VERSION,
+          scopePredicateJson: { predicate: "accepted_records" } as object, scopePredicateHash: predicateHash,
+          unmetRequirementsJson: unmet.length ? ({ unmet } as object) : undefined,
+          membershipMode: "MATERIALIZED", eligiblePopulationFingerprint: fp, sourcePopulationCount: count, eligiblePopulationCount: count,
+        },
+      });
+    }
+  }
+  return { finished, batchCount: recs.length, fp };
+}
+
+/**
+ * TARGETED materialization path (unchanged public behavior): drive ONE known
+ * (testVersion,dataset) chunk to exhaustion, one bounded tx per batch. Single-
+ * writer assumption; use `claimAndMaterializeBatch` for multi-worker discovery.
+ */
 export async function materializePopulation(
   auditFirmId: string, prepId: string, testVersionId: string, datasetId: string, opts?: { batchSize?: number; maxBatches?: number },
 ): Promise<{ done: boolean; processed: number; fingerprint: string | null }> {
   const batchSize = opts?.batchSize ?? DEFAULT_BATCH;
   const maxBatches = opts?.maxBatches ?? Number.MAX_SAFE_INTEGER;
   let processed = 0;
-
   for (let b = 0; b < maxBatches; b++) {
-    const step = await withTenantContext(auditFirmId, async (tx) => {
-      const cursor = await tx.auditRunPrepChunk.findUnique({
-        where: { preparationId_auditTestVersionId_datasetId: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId } },
-        select: { lastSourceRowNo: true, cursorState: true, done: true },
-      });
-      if (cursor?.done) return { finished: true, batchCount: 0, fp: (cursor.cursorState as { fingerprint?: string })?.fingerprint ?? null };
-      if (!cursor) throw new Error("prep chunk missing — beginPreparation must create it for eligible (testVersion,dataset)");
-      const state = (cursor.cursorState as { acc?: string; count?: number; eligibility?: string; unmet?: string[]; predicateHash?: string } | null) ?? {};
-      let acc = state.acc ?? FOLD_SEED;
-      let count = state.count ?? 0;
-      const eligibility = (state.eligibility ?? "ELIGIBLE") as "ELIGIBLE" | "PARTIALLY_ELIGIBLE" | "NOT_ELIGIBLE";
-      const unmet = state.unmet ?? [];
-      const predicateHash = state.predicateHash ?? fingerprint("g4pred.1", str("accepted_records"));
-      const after = cursor.lastSourceRowNo ?? -1;
-
-      const ds = await tx.dataset.findUnique({ where: { id: datasetId }, select: { datasetHash: true } });
-      const recs = await tx.importedRecord.findMany({
-        where: { datasetId, status: { not: "REJECTED" }, sourceRowNo: { gt: after } },
-        orderBy: { sourceRowNo: "asc" }, take: batchSize,
-        select: { sourceRowNo: true, rawHash: true },
-      });
-      let lastRow = after;
-      for (const r of recs) {
-        const eoi = importedRecordEOI({ datasetHash: ds!.datasetHash!, sourceRowNo: r.sourceRowNo, rawHash: r.rawHash });
-        await tx.auditRunScopeMember.create({
-          data: { auditFirmId, preparationId: prepId, auditTestVersionId: testVersionId, datasetId, sourceRowNo: r.sourceRowNo, evidenceType: "IMPORTED_RECORD", eoiFrameHash: eoi, contentHash: r.rawHash },
-        });
-        acc = foldMember(acc, Buffer.from(eoi, "hex"));
-        count += 1;
-        lastRow = r.sourceRowNo;
-      }
-      const finished = recs.length < batchSize;
-      const fp = finished ? sealFold("g4pop.2", acc, count) : null;
-      // Chunk always exists (created by beginPreparation) — update the running fold.
-      await tx.auditRunPrepChunk.update({
-        where: { preparationId_auditTestVersionId_datasetId: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId } },
-        data: { lastSourceRowNo: lastRow, cursorState: { acc, count, eligibility, unmet, predicateHash, ...(fp ? { fingerprint: fp } : {}) } as object, done: finished },
-      });
-      if (finished) {
-        // Single, final, immutable resolution insert — now that the population
-        // fingerprint is known. audit_app has INSERT-only on this table.
-        const existing = await tx.auditRunScopeResolution.findFirst({
-          where: { preparationId: prepId, auditTestVersionId: testVersionId, datasetId }, select: { id: true },
-        });
-        if (!existing) {
-          const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { runId: true } });
-          await tx.auditRunScopeResolution.create({
-            data: {
-              auditFirmId, preparationId: prepId, runId: prep!.runId, auditTestVersionId: testVersionId, datasetId,
-              eligibility, resolutionAlgorithmVersion: RESOLUTION_ALGO_VERSION,
-              scopePredicateJson: { predicate: "accepted_records" } as object, scopePredicateHash: predicateHash,
-              unmetRequirementsJson: unmet.length ? ({ unmet } as object) : undefined,
-              membershipMode: "MATERIALIZED", eligiblePopulationFingerprint: fp, sourcePopulationCount: count, eligiblePopulationCount: count,
-            },
-          });
-        }
-      }
-      return { finished, batchCount: recs.length, fp };
-    });
+    const step = await withTenantContext(auditFirmId, (tx) => materializeBatchInTx(tx, auditFirmId, prepId, testVersionId, datasetId, batchSize));
     processed += step.batchCount;
     if (step.finished) return { done: true, processed, fingerprint: step.fp };
   }
   return { done: false, processed, fingerprint: null };
+}
+
+/**
+ * Multi-worker preparation-claim outcome (G6-DEBT-006). Discriminated so callers
+ * never confuse "nothing to do right now" (BUSY) with "ready to seal" (COMPLETE).
+ */
+export type ClaimOutcome =
+  | { kind: "PROGRESSED"; chunkId: string }           // claimed one chunk, one batch committed, chunk still unfinished
+  | { kind: "CHUNK_COMPLETED"; chunkId: string; fingerprint: string | null } // final batch committed, chunk now done
+  | { kind: "BUSY"; unfinished: number }              // unfinished chunk(s) exist but are locked by peers — retry/yield
+  | { kind: "COMPLETE" }                              // zero unfinished chunks; prep still PREPARING → seal-ready
+  | { kind: "NOT_PREPARING"; status: string };        // prep/run state does not permit materialization
+
+/**
+ * Multi-worker preparation claim primitive (G6-DEBT-006 / approved spike Option C).
+ * In ONE bounded, tenant-scoped transaction: validate state → claim ONE unfinished
+ * chunk with FOR UPDATE SKIP LOCKED (non-blocking; competitors skip to other
+ * chunks — cross-chunk parallelism preserved, same chunk single-writer) →
+ * materialize exactly one batch via the shared body → commit, which releases the
+ * row lock. Claim and writes are the SAME transaction, so ownership never outlives
+ * the work; a crash/rollback releases it with NO durable owner to reap.
+ *
+ * BUSY vs COMPLETE (mandatory disambiguation): SKIP LOCKED yielding no row is
+ * ambiguous, so a plain count of unfinished chunks decides — zero → COMPLETE,
+ * >0 → BUSY (they exist but are peer-locked). `done` is monotonic and a chunk's
+ * done=true commits atomically with its resolution, so COMPLETE cannot coexist
+ * with an unfinished chunk at its snapshot; the C1 seal invariant independently
+ * re-verifies under its own prep-row lock. No blocking wait (SKIP LOCKED), bound
+ * by MAX_UNIT_TX_TIME_MS, RLS-scoped, no schema/lease/heartbeat/advisory lock.
+ */
+export async function claimAndMaterializeBatch(
+  auditFirmId: string, prepId: string, opts?: { batchSize?: number },
+): Promise<ClaimOutcome> {
+  const batchSize = opts?.batchSize ?? DEFAULT_BATCH;
+  return withTenantContext(auditFirmId, async (tx): Promise<ClaimOutcome> => {
+    // State validation under RLS (DB authoritative; a foreign-firm prep is invisible
+    // → NOT_PREPARING, no cross-tenant existence leak).
+    const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { status: true, runId: true } });
+    if (!prep || prep.status !== "PREPARING") return { kind: "NOT_PREPARING", status: prep?.status ?? "NOT_FOUND" };
+    const run = await tx.auditRun.findUnique({ where: { id: prep.runId }, select: { status: true } });
+    if (!run || run.status !== "PREPARING") return { kind: "NOT_PREPARING", status: run?.status ?? "NOT_FOUND" };
+
+    // Claim ONE unfinished chunk, non-blocking. RLS constrains this raw select to
+    // the bound firm (the tenant GUC is already set by withTenantContext).
+    const claimed = await tx.$queryRawUnsafe<{ id: string; auditTestVersionId: string; datasetId: string }[]>(
+      `SELECT "id","auditTestVersionId","datasetId" FROM "audit_run_prep_chunks" WHERE "preparationId"=$1 AND "done"=false ORDER BY "id" FOR UPDATE SKIP LOCKED LIMIT 1`,
+      prepId,
+    );
+    if (claimed.length === 0) {
+      const unfinished = await tx.auditRunPrepChunk.count({ where: { preparationId: prepId, done: false } });
+      return unfinished === 0 ? { kind: "COMPLETE" } : { kind: "BUSY", unfinished };
+    }
+    const c = claimed[0]!;
+    const step = await materializeBatchInTx(tx, auditFirmId, prepId, c.auditTestVersionId, c.datasetId, batchSize);
+    return step.finished
+      ? { kind: "CHUNK_COMPLETED", chunkId: c.id, fingerprint: step.fp }
+      : { kind: "PROGRESSED", chunkId: c.id };
+  });
 }
 
 /** Stage A step 3: seal the generation — compute expected counts + manifest hash → COMPLETE. */
