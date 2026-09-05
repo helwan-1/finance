@@ -23,7 +23,9 @@ export type Permission =
   | "findings:view"
   | "findings:manage"
   | "findings:review"
-  | "engagement:manage";
+  | "engagement:manage"
+  | "runs:view"
+  | "runs:manage";
 
 const ALL: Permission[] = [
   "documents:view",
@@ -42,6 +44,8 @@ const ALL: Permission[] = [
   "findings:manage",
   "findings:review",
   "engagement:manage",
+  "runs:view",
+  "runs:manage",
 ];
 
 const READ_ONLY: Permission[] = [
@@ -52,6 +56,7 @@ const READ_ONLY: Permission[] = [
   "auditlog:view",
   "rules:view",
   "findings:view",
+  "runs:view",
 ];
 
 const FIELD_WORK: Permission[] = [
@@ -62,6 +67,7 @@ const FIELD_WORK: Permission[] = [
   "data:export",
   "rules:run",
   "findings:manage",
+  "runs:manage",
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
@@ -77,6 +83,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "analytics:view",
     "rules:view",
     "findings:view",
+    "runs:view",
   ],
   REVIEWER: [...READ_ONLY, "findings:review"],
 };
