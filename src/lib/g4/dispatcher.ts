@@ -85,6 +85,7 @@ function reqPosInt(name: string, v: number, min: number, max: number): number {
 
 const PREP_CLASS: Record<string, DispatchClass> = {
   SEALED: "DONE", YIELDED: "YIELDED", BUSY_YIELDED: "BUSY", NOOP: "STALE", DATA_ERROR: "DATA_ERROR",
+  FAILED: "TERMINAL_FAILED", // PREP-F: deterministic engine failure (durable PREPARING→FAILED)
 };
 const EXEC_CLASS: Record<string, DispatchClass> = {
   DONE: "DONE", BUSY: "BUSY", STALE: "STALE", LEASE_LOST: "LEASE_LOST",

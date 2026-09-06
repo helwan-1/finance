@@ -21,6 +21,56 @@ export class PreparationIncompleteError extends Error {
   }
 }
 
+/**
+ * Deterministic, unrecoverable preparation failure (PREP-F). Thrown by the engine
+ * when a generation cannot complete for a reason that a plain retry cannot fix
+ * (bad/impossible frozen config, a structural data/invariant violation). A typed
+ * class so the background driver can distinguish it from a RETRYABLE infrastructure
+ * error and durably transition the generation PREPARING → FAILED (stopping locator
+ * poison rediscovery). The message is engine-authored (never raw DB/exception text)
+ * so it is safe to persist as a sanitized failure detail.
+ */
+export type PreparationFailureCode = "CONFIG" | "DATA" | "INVARIANT" | "DETERMINISM";
+export class PreparationDeterministicError extends Error {
+  constructor(public readonly failureCode: PreparationFailureCode, message: string) {
+    super(message);
+    this.name = "PreparationDeterministicError";
+  }
+}
+
+/** Max persisted failureDetail length (sanitized, bounded — PREP-F / PF16). */
+const MAX_FAILURE_DETAIL = 500;
+
+export type TerminalFailOutcome = { status: "FAILED" } | { status: "ALREADY_TERMINAL"; current: string };
+
+/**
+ * PREP-F terminal-failure primitive (engine-owned, tenant-scoped, RLS-safe,
+ * idempotent, concurrency-fenced). Transitions an active generation
+ * PREPARING → FAILED and records a sanitized, bounded cause. NEVER touches
+ * chunks/members/resolutions (history retained) and NEVER changes run status.
+ *
+ * Locks the generation row FOR UPDATE, then: absent/foreign (RLS-hidden) → no-op;
+ * already FAILED → idempotent no-op; COMPLETE/PUBLISHED/ABANDONED → refuse (never
+ * fail a completed/published/superseded generation). Only PREPARING transitions.
+ * The g4_prep_guard trigger permits PREPARING→FAILED (only PUBLISHED is frozen).
+ */
+export async function terminalFailPreparation(
+  auditFirmId: string, prepId: string, failureCode: PreparationFailureCode, detail: string,
+): Promise<TerminalFailOutcome> {
+  return withTenantContext(auditFirmId, async (tx): Promise<TerminalFailOutcome> => {
+    await tx.$queryRaw`SELECT "id" FROM "audit_run_preparations" WHERE "id" = ${prepId} FOR UPDATE`;
+    const prep = await tx.auditRunPreparation.findUnique({ where: { id: prepId }, select: { status: true } });
+    if (!prep) return { status: "ALREADY_TERMINAL", current: "NOT_FOUND" };
+    if (prep.status !== "PREPARING") return { status: "ALREADY_TERMINAL", current: prep.status };
+    const safeDetail = detail.replace(/\s+/g, " ").trim().slice(0, MAX_FAILURE_DETAIL);
+    await tx.auditRunPreparation.update({
+      where: { id: prepId },
+      data: { status: "FAILED", failureCode, failureDetail: safeDetail, failedAt: new Date() },
+    });
+    return { status: "FAILED" };
+  });
+}
+
 interface Requirements {
   requiredDatasetKinds?: string[];
   requiresAccountMapping?: boolean;
@@ -211,7 +261,7 @@ async function materializeBatchInTx(
     select: { lastSourceRowNo: true, cursorState: true, done: true },
   });
   if (cursor?.done) return { finished: true, batchCount: 0, fp: (cursor.cursorState as { fingerprint?: string })?.fingerprint ?? null };
-  if (!cursor) throw new Error("prep chunk missing — beginPreparation must create it for eligible (testVersion,dataset)");
+  if (!cursor) throw new PreparationDeterministicError("INVARIANT", "prep chunk missing — beginPreparation must create it for eligible (testVersion,dataset)");
   const state = (cursor.cursorState as { acc?: string; count?: number; eligibility?: string; unmet?: string[]; predicateHash?: string } | null) ?? {};
   let acc = state.acc ?? FOLD_SEED;
   let count = state.count ?? 0;
@@ -374,11 +424,18 @@ export async function sealPreparation(auditFirmId: string, prepId: string): Prom
     ]);
     // Every eligible/partial resolution must have a sealed population fingerprint.
     const unfinished = resolutions.filter((r) => r.eligibility !== "NOT_ELIGIBLE" && !r.eligiblePopulationFingerprint);
-    if (unfinished.length) throw new Error(`preparation incomplete: ${unfinished.length} resolution(s) without a population fingerprint`);
+    if (unfinished.length) throw new PreparationDeterministicError("INVARIANT", `preparation incomplete: ${unfinished.length} resolution(s) without a population fingerprint`);
 
     // B1: sealing a publishable generation requires an attestable, build-specific
-    // identity — never the dev fallback — so the manifest attests a real build.
-    const engineBuildVersionCandidate = (await import("./engine-build")).getAttestableEngineBuildVersion();
+    // identity — never the dev fallback — so the manifest attests a real build. A
+    // missing attestable build is a deterministic CONFIG failure (retry cannot fix
+    // it until the build identity is provisioned).
+    let engineBuildVersionCandidate: string;
+    try {
+      engineBuildVersionCandidate = (await import("./engine-build")).getAttestableEngineBuildVersion();
+    } catch (e) {
+      throw new PreparationDeterministicError("CONFIG", `attestable engine build required to seal (${(e as Error).message})`);
+    }
     const expected = { datasets, testVersions, resolutions: resolutions.length, members, mappingPins };
     const manifestHash = fingerprint("g4manifest.1", fields([
       ["expected", fields(Object.entries(expected).map(([k, v]) => [k, int(v)]))],

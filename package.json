@@ -15,7 +15,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "seed:g5": "tsx prisma/seed-g5-demo.ts",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "dispatch": "tsx scripts/dispatch-runtime.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

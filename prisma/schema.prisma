@@ -1358,6 +1358,11 @@ model AuditRunPreparation {
   preparationManifestHash            String?
   startedAt                          DateTime               @default(now())
   sealedAt                           DateTime?
+  // PREP-F1 terminal-failure metadata (deterministic PREPARING→FAILED). Sanitized,
+  // bounded detail only; never raw exception text.
+  failureCode                        String?
+  failureDetail                      String?
+  failedAt                           DateTime?
 
   @@unique([auditFirmId, id])
   @@unique([runId, generationNo])

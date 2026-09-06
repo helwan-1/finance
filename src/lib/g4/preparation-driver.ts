@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { withTenantContext } from "@/lib/db/tenant";
-import { claimAndMaterializeBatch, sealPreparation, PreparationIncompleteError } from "./preparation";
+import { claimAndMaterializeBatch, sealPreparation, PreparationIncompleteError, PreparationDeterministicError, terminalFailPreparation } from "./preparation";
 
 /**
  * G6 Phase C3-2 — tenant-scoped background PREPARATION driver.
@@ -50,7 +50,10 @@ export type PrepDriveOutcome =
   | { kind: "YIELDED"; prepId: string; claims: number; reason: "maxClaims" | "wallClock"; progress: DriveProgress }
   | { kind: "BUSY_YIELDED"; prepId: string; claims: number; unfinished: number; progress: DriveProgress }
   | { kind: "NOOP"; reason: "run_not_preparing" | "no_active_preparation" | "not_preparing" }
-  | { kind: "DATA_ERROR"; detail: string; preparing: number };
+  | { kind: "DATA_ERROR"; detail: string; preparing: number }
+  // PREP-F: a deterministic engine failure durably transitioned the generation
+  // PREPARING → FAILED (poison-work stopped; locator will no longer select it).
+  | { kind: "FAILED"; prepId: string; claims: number; failureCode: string };
 
 async function readProgress(auditFirmId: string, prepId: string): Promise<DriveProgress> {
   return withTenantContext(auditFirmId, async (tx) => {
@@ -97,29 +100,42 @@ export async function processPreparationWork(
   const prepId = derived.prepId;
 
   // 2) Bounded claim loop. Budget is checked at the top of each iteration — i.e.
-  //    strictly between committed batch transactions.
+  //    strictly between committed batch transactions. A deterministic engine
+  //    failure (PreparationDeterministicError) durably fails the generation and
+  //    stops poison rediscovery; a retryable/infra error propagates unchanged.
   let claims = 0;
-  for (;;) {
-    if (claims >= maxClaims) return { kind: "YIELDED", prepId, claims, reason: "maxClaims", progress: await readProgress(auditFirmId, prepId) };
-    if (now() - start >= wallClockBudgetMs) return { kind: "YIELDED", prepId, claims, reason: "wallClock", progress: await readProgress(auditFirmId, prepId) };
+  try {
+    for (;;) {
+      if (claims >= maxClaims) return { kind: "YIELDED", prepId, claims, reason: "maxClaims", progress: await readProgress(auditFirmId, prepId) };
+      if (now() - start >= wallClockBudgetMs) return { kind: "YIELDED", prepId, claims, reason: "wallClock", progress: await readProgress(auditFirmId, prepId) };
 
-    const outcome = await claimAndMaterializeBatch(auditFirmId, prepId, opts.batchSize ? { batchSize: opts.batchSize } : undefined);
-    switch (outcome.kind) {
-      case "PROGRESSED":
-      case "CHUNK_COMPLETED":
-        claims += 1;
-        continue; // loop re-checks budgets before the next claim
-      case "BUSY":
-        // Unfinished chunk(s) exist but are peer-locked. Yield immediately — no
-        // spin, no sleep, no seal. A later invocation (or a peer) drains them.
-        return { kind: "BUSY_YIELDED", prepId, claims, unfinished: outcome.unfinished, progress: await readProgress(auditFirmId, prepId) };
-      case "COMPLETE":
-        return await sealIdempotent(auditFirmId, prepId, claims);
-      case "NOT_PREPARING":
-        // Prep/run left PREPARING between derivation and claim (sealed/cancelled/
-        // published/foreign) → stale coordinate.
-        return { kind: "NOOP", reason: "not_preparing" };
+      const outcome = await claimAndMaterializeBatch(auditFirmId, prepId, opts.batchSize ? { batchSize: opts.batchSize } : undefined);
+      switch (outcome.kind) {
+        case "PROGRESSED":
+        case "CHUNK_COMPLETED":
+          claims += 1;
+          continue; // loop re-checks budgets before the next claim
+        case "BUSY":
+          // Unfinished chunk(s) exist but are peer-locked. Yield immediately — no
+          // spin, no sleep, no seal. A later invocation (or a peer) drains them.
+          return { kind: "BUSY_YIELDED", prepId, claims, unfinished: outcome.unfinished, progress: await readProgress(auditFirmId, prepId) };
+        case "COMPLETE":
+          return await sealIdempotent(auditFirmId, prepId, claims);
+        case "NOT_PREPARING":
+          // Prep/run left PREPARING between derivation and claim (sealed/cancelled/
+          // published/foreign) → stale coordinate.
+          return { kind: "NOOP", reason: "not_preparing" };
+      }
     }
+  } catch (e) {
+    if (e instanceof PreparationDeterministicError) {
+      // Durable, engine-owned PREPARING → FAILED (idempotent, RLS-safe). History
+      // (chunks/members/resolutions) retained; run stays PREPARING; locator stops
+      // selecting it; a new generation may then be started to recover.
+      await terminalFailPreparation(auditFirmId, prepId, e.failureCode, e.message);
+      return { kind: "FAILED", prepId, claims, failureCode: e.failureCode };
+    }
+    throw e; // retryable/infra — leave PREPARING for a future cycle
   }
 }
 

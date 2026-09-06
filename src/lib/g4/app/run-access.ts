@@ -250,6 +250,56 @@ export async function getRunResults(actor: RunActor, runId: string, take = 500):
   });
 }
 
+export interface DatasetOption { id: string; kind: string; status: string; datasetHash: string | null; createdAt: string }
+export interface TestOption { key: string; name: string; nameAr: string; testType: string }
+export interface PreparationSummary { id: string; generationNo: number; status: string; failureCode: string | null; sealedAt: string | null }
+
+/** Consumable datasets in an engagement the actor belongs to (for run config). */
+export async function listDatasetsForEngagement(actor: RunActor, engagementId: string): Promise<DatasetOption[]> {
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    await assertEngagementMembership(tx, actor, engagementId);
+    const rows = await tx.dataset.findMany({
+      where: { engagementId, status: { in: ["COMPLETED", "COMPLETED_WITH_ISSUES"] } },
+      orderBy: { createdAt: "desc" }, take: 200,
+      select: { id: true, kind: true, status: true, datasetHash: true, createdAt: true },
+    });
+    return rows.map((d) => ({ id: d.id, kind: d.kind, status: String(d.status), datasetHash: d.datasetHash, createdAt: d.createdAt.toISOString() }));
+  });
+}
+
+/** Firm audit tests that have an ACTIVE current version (selectable for a run). */
+export async function listAuditTests(actor: RunActor): Promise<TestOption[]> {
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    const tests = await tx.auditTest.findMany({
+      where: { currentVersionId: { not: null } },
+      orderBy: { key: "asc" }, take: 500,
+      select: { key: true, name: true, nameAr: true, testType: true, currentVersionId: true },
+    });
+    const activeIds = new Set(
+      (await tx.auditTestVersion.findMany({
+        where: { id: { in: tests.map((t) => t.currentVersionId!).filter(Boolean) }, status: "ACTIVE" },
+        select: { id: true },
+      })).map((v) => v.id),
+    );
+    return tests
+      .filter((t) => t.currentVersionId && activeIds.has(t.currentVersionId))
+      .map((t) => ({ key: t.key, name: t.name, nameAr: t.nameAr, testType: String(t.testType) }));
+  });
+}
+
+/** Latest preparation generation for a run the actor belongs to (status polling). */
+export async function getLatestPreparation(actor: RunActor, runId: string): Promise<PreparationSummary | null> {
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    await authorizeRun(tx, actor, runId);
+    const prep = await tx.auditRunPreparation.findFirst({
+      where: { runId }, orderBy: { generationNo: "desc" },
+      select: { id: true, generationNo: true, status: true, failureCode: true, sealedAt: true },
+    });
+    if (!prep) return null;
+    return { id: prep.id, generationNo: prep.generationNo, status: String(prep.status), failureCode: prep.failureCode, sealedAt: prep.sealedAt ? prep.sealedAt.toISOString() : null };
+  });
+}
+
 // ── Commands (authorize tx, then the existing G4 command; see TOCTOU note) ──
 
 export interface CreateRunInput {

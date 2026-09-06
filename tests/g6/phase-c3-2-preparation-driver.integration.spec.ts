@@ -55,7 +55,7 @@ async function materializeAll(prepId: string, batchSize = 500): Promise<void> {
   const chunks = await withTenantContext(FIRM, (t) => t.auditRunPrepChunk.findMany({ where: { preparationId: prepId }, select: { auditTestVersionId: true, datasetId: true } }));
   for (const c of chunks) await materializePopulation(FIRM, prepId, c.auditTestVersionId, c.datasetId, { batchSize });
 }
-const prepRow = (prepId: string) => owner.auditRunPreparation.findUniqueOrThrow({ where: { id: prepId }, select: { status: true, preparationManifestHash: true } });
+const prepRow = (prepId: string) => owner.auditRunPreparation.findUniqueOrThrow({ where: { id: prepId }, select: { status: true, preparationManifestHash: true, failureCode: true } });
 const runRow = (runId: string) => owner.auditRun.findUniqueOrThrow({ where: { id: runId }, select: { status: true, freezeGeneration: true } });
 const memberCount = (prepId: string) => owner.auditRunScopeMember.count({ where: { preparationId: prepId } });
 const undoneCount = (prepId: string) => owner.auditRunPrepChunk.count({ where: { preparationId: prepId, done: false } });
@@ -234,14 +234,19 @@ run("G6 Phase C3-2 — preparation driver (PD1–PD25)", () => {
     expect(await memberCount(prepId)).toBe(2); // one committed batch, no interruption
   });
 
-  it("PD19: an unexpected seal/DB error is NOT silently converted to success", async () => {
+  it("PD19: an unexpected (untyped/infra) error is NOT silently converted to success", async () => {
+    // NOTE: under PREP-F, a deterministic engine error (e.g. a missing fingerprint)
+    // is now a typed PreparationDeterministicError → durable FAILED (see PREP-F PF1).
+    // This case proves the OTHER branch: a generic/untyped error (here a P2002 from a
+    // pre-seeded colliding scope member) must PROPAGATE and leave the prep PREPARING.
     const { runId, prepId } = await draftPreparing(3, 1, 500);
-    await materializeAll(prepId); // all done; seal would otherwise succeed
-    // Break the seal invariant on a disposable fixture: null a resolution's
-    // population fingerprint so sealPreparation throws a non-idempotent error.
-    await owner.$executeRawUnsafe(`UPDATE public."audit_run_scope_resolutions" SET "eligiblePopulationFingerprint"=NULL WHERE "preparationId"=$1`, prepId);
+    const chunk = await withTenantContext(FIRM, (t) => t.auditRunPrepChunk.findFirstOrThrow({ where: { preparationId: prepId }, select: { auditTestVersionId: true, datasetId: true } }));
+    const firstRow = await withTenantContext(FIRM, (t) => t.importedRecord.findFirstOrThrow({ where: { datasetId: chunk.datasetId, status: { not: "REJECTED" } }, orderBy: { sourceRowNo: "asc" }, select: { sourceRowNo: true } }));
+    await owner.auditRunScopeMember.create({ data: { auditFirmId: FIRM, preparationId: prepId, auditTestVersionId: chunk.auditTestVersionId, datasetId: chunk.datasetId, sourceRowNo: firstRow.sourceRowNo, evidenceType: "IMPORTED_RECORD", eoiFrameHash: "deadbeef", contentHash: "deadbeef" } });
     await expect(processPreparationWork(FIRM, runId)).rejects.toThrow();
-    expect((await prepRow(prepId)).status).toBe("PREPARING"); // not sealed, not faked
+    const p = await prepRow(prepId);
+    expect(p.status).toBe("PREPARING"); // not sealed, not faked, not FAILED
+    expect(p.failureCode).toBeNull();
   });
 
   it("PD25: dirty multiplicity (>1 PREPARING) fails closed with DATA_ERROR (disposable index bypass)", async () => {

@@ -5,16 +5,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Table2, Download, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
-interface ImportResult {
-  created: number;
-  skipped: number;
-  errors: string[];
-}
+interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string }
+interface ConfirmResult { datasetId?: string; rowsAccepted?: number; rowsRejected?: number; error?: string }
 
 /**
- * Import ledger transactions from a CSV directly (no OCR), plus a template
- * download. This is the accurate path for real data — values are stored exactly
- * as entered.
+ * Import a general-ledger CSV through the lineage-aware two-phase pipeline
+ * (`/api/imports` → `/api/imports/:batchId/confirm`). The source file is retained
+ * under content-addressed custody; ACCEPTED rows are canonicalized into a Dataset
+ * consumable by an audit run. Values are stored exactly as entered (no OCR).
  */
 export function ImportTransactions() {
   const engagementId = useUIStore((s) => s.engagementId);
@@ -24,18 +22,26 @@ export function ImportTransactions() {
 
   const mutation = useMutation({
     mutationFn: async (file: File) => {
+      if (!engagementId) throw new Error("اختر ارتباط تدقيق أولاً");
+      // Phase 1 — upload + retain source + validate (halts at READY, no transactions).
       const form = new FormData();
       form.set("file", file);
       form.set("engagementId", engagementId);
-      const res = await fetch("/api/transactions/import", { method: "POST", body: form });
-      const data = (await res.json().catch(() => ({}))) as ImportResult & { error?: string };
-      if (!res.ok && !data.created) throw new Error(data.error ?? "فشل الاستيراد");
-      return data;
+      form.set("datasetKind", "GENERAL_LEDGER");
+      form.set("acknowledgeDuplicate", "true");
+      const startRes = await fetch("/api/imports", { method: "POST", body: form });
+      const start = (await startRes.json().catch(() => ({}))) as StartResult;
+      if (!startRes.ok || !start.batchId) throw new Error(start.error ?? "فشل رفع الملف");
+      // Phase 2 — confirm: canonicalize ACCEPTED rows into a Dataset.
+      const confRes = await fetch(`/api/imports/${start.batchId}/confirm`, { method: "POST" });
+      const conf = (await confRes.json().catch(() => ({}))) as ConfirmResult;
+      if (!confRes.ok) throw new Error(conf.error ?? "فشل تأكيد الاستيراد");
+      return conf;
     },
     onSuccess: (r) => {
-      setMsg(`تم استيراد ${r.created} معاملة${r.skipped ? ` — تم تخطّي ${r.skipped}` : ""}. شغّل التدقيق الآن.`);
+      setMsg(`تم استيراد ${r.rowsAccepted ?? 0} سطراً${r.rowsRejected ? ` — رُفض ${r.rowsRejected}` : ""}. الحقل جاهز لإنشاء تدقيق.`);
+      void queryClient.invalidateQueries({ queryKey: ["datasets"] });
       void queryClient.invalidateQueries({ queryKey: ["anomalies"] });
-      void queryClient.invalidateQueries({ queryKey: ["anomalies-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["analytics"] });
     },
     onError: (e) => setMsg((e as Error).message),
