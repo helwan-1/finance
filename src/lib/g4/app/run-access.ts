@@ -73,7 +73,7 @@ export class RunAccessError extends Error {
  * and raises a stable code, so a state failure never reaches the client as a raw
  * G4 message. The underlying G4 command remains the authority and re-validates.
  */
-export type RunStateErrorCode = "INVALID_RUN_STATE" | "PREPARATION_NOT_COMPLETE";
+export type RunStateErrorCode = "INVALID_RUN_STATE" | "PREPARATION_NOT_COMPLETE" | "PREPARATION_ALREADY_ACTIVE";
 export class RunStateError extends Error {
   readonly status = 409;
   constructor(public readonly code: RunStateErrorCode, message: string) {
@@ -323,9 +323,56 @@ export async function beginRunPreparation(
     if (!PREPARABLE_RUN_STATES.includes(run.status)) {
       throw new RunStateError("INVALID_RUN_STATE", `run is not preparable in status ${run.status}`);
     }
+    // At-most-one-active-generation invariant (PREP-GEN-MULTIPLICITY): a run may
+    // carry many historical generations, but only ONE unsealed/PREPARING one at a
+    // time. Fast deterministic pre-check; the partial unique index
+    // ux_prep_active_generation_per_run is the race-safe authority (see the
+    // concurrent-race translation below).
+    const active = await tx.auditRunPreparation.findFirst({ where: { runId, status: "PREPARING" }, select: { id: true } });
+    if (active) {
+      throw new RunStateError("PREPARATION_ALREADY_ACTIVE", "an active preparation generation already exists for this run");
+    }
     await assertPreparableConfig(tx, run.engagementId, input.tests, input.datasetIds);
   });
-  return beginPreparation(actor.auditFirmId, { runId, tests: input.tests, datasetIds: input.datasetIds, batchSize: input.batchSize });
+  try {
+    return await beginPreparation(actor.auditFirmId, { runId, tests: input.tests, datasetIds: input.datasetIds, batchSize: input.batchSize });
+  } catch (e) {
+    // Concurrent-race authority: two callers can both pass the pre-check; the DB
+    // then rejects the losing INSERT on a per-run preparation uniqueness (the new
+    // active-generation index, or the pre-existing (runId,generationNo) unique when
+    // both raced to the same next number). Both mean "a competing begin on the same
+    // run" → the SAME deterministic 409, never a leaked Prisma/PostgreSQL error.
+    if (isActivePreparationConflict(e)) {
+      throw new RunStateError("PREPARATION_ALREADY_ACTIVE", "an active preparation generation already exists for this run");
+    }
+    throw e;
+  }
+}
+
+/**
+ * Narrow identification of a per-run preparation uniqueness violation (Prisma
+ * P2002) — tied SPECIFICALLY to the active-generation partial unique index or the
+ * (runId,generationNo) unique. Any other unique violation is left untranslated so
+ * it never masquerades as a preparation-multiplicity conflict.
+ */
+export function isActivePreparationConflict(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const err = e as { code?: string; meta?: { target?: unknown; modelName?: unknown } };
+  if (err.code !== "P2002") return false;
+  // Scope precisely to the AuditRunPreparation table. Prisma resolves `target` to
+  // the field/constraint for schema-managed uniques, but for the RAW partial unique
+  // index it may report "(not available)" (no target) — so `modelName` is the
+  // reliable, narrow signal that this is a per-run preparation uniqueness violation
+  // (the only per-run uniques the begin path can hit). Unrelated tables never match.
+  if (err.meta?.modelName === "AuditRunPreparation") return true;
+  const t = err.meta?.target;
+  const s = Array.isArray(t) ? t.join(",") : typeof t === "string" ? t : "";
+  return (
+    s.includes("ux_prep_active_generation_per_run") ||
+    s.includes("audit_run_preparations_runId_generationNo") ||
+    s.split(",").includes("runId") ||
+    (s.includes("runId") && s.includes("generationNo"))
+  );
 }
 
 /** Assert a preparation belongs to `runId` within the caller's firm (RLS); returns its status. */
