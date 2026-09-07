@@ -19,6 +19,7 @@ import {
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { UploadButton } from "./upload-button";
 import { ImportTransactions } from "./import-transactions";
+import { ImportedDatasets } from "./imported-datasets";
 import { DocumentActions } from "./document-actions";
 
 async function fetchDocuments(
@@ -64,6 +65,12 @@ export function DocumentsView() {
         التي تعمل عليها عملية التدقيق. أما <span className="font-medium">«رفع مستند»</span> فيستخرج
         الحركات آليًا (OCR) للوحة التحكم فقط، <span className="font-medium">ولا يُستخدم في عمليات التدقيق</span>
         (ويتطلب تفعيل مفتاح Claude للقراءة الحقيقية).
+      </div>
+
+      <ImportedDatasets />
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-[rgb(var(--muted))]">مستندات OCR المرفوعة</h2>
       </div>
 
       {isPending ? (
