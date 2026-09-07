@@ -26,6 +26,17 @@ export function parseFindingContent(raw: unknown): FindingContentInput | null {
     return null;
   }
 
+  // A money amount and its currency must be BOTH set or BOTH null (DB CHECK
+  // afv_estimated_pair_chk). Pair them here so an amount without a currency
+  // (the form shows "SAR" only as a placeholder) defaults to SAR, and a stray
+  // currency without an amount is dropped.
+  const pair = (amtKey: string, curKey: string): [string | null, string | null] => {
+    const amt = opt(amtKey);
+    return amt ? [amt, opt(curKey) ?? "SAR"] : [null, null];
+  };
+  const [observedAmount, observedCurrency] = pair("observedAmount", "observedCurrency");
+  const [estimatedExposureAmount, estimatedExposureCurrency] = pair("estimatedExposureAmount", "estimatedExposureCurrency");
+
   return {
     category,
     condition,
@@ -34,9 +45,9 @@ export function parseFindingContent(raw: unknown): FindingContentInput | null {
     effect,
     auditorConclusion,
     recommendation: opt("recommendation"),
-    observedAmount: opt("observedAmount"),
-    observedCurrency: opt("observedCurrency"),
-    estimatedExposureAmount: opt("estimatedExposureAmount"),
-    estimatedExposureCurrency: opt("estimatedExposureCurrency"),
+    observedAmount,
+    observedCurrency,
+    estimatedExposureAmount,
+    estimatedExposureCurrency,
   };
 }

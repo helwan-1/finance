@@ -40,9 +40,9 @@ function emptyContent(): FindingContentDTO {
     auditorConclusion: "",
     recommendation: "",
     observedAmount: "",
-    observedCurrency: "",
+    observedCurrency: "SAR",
     estimatedExposureAmount: "",
-    estimatedExposureCurrency: "",
+    estimatedExposureCurrency: "SAR",
   };
 }
 
