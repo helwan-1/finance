@@ -216,7 +216,7 @@ export async function listRunsForEngagement(actor: RunActor, engagementId: strin
 
 export interface JobSummary {
   id: string; attemptNo: number; status: string; leaseOwner: string | null;
-  failureCode: string | null; startedAt: string | null; completedAt: string | null;
+  failureCode: string | null; failureDetail: string | null; startedAt: string | null; completedAt: string | null;
 }
 
 export async function getRunJobs(actor: RunActor, runId: string): Promise<JobSummary[]> {
@@ -224,10 +224,11 @@ export async function getRunJobs(actor: RunActor, runId: string): Promise<JobSum
     await authorizeRun(tx, actor, runId);
     const jobs = await tx.auditJob.findMany({
       where: { runId }, orderBy: { attemptNo: "asc" },
-      select: { id: true, attemptNo: true, status: true, leaseOwner: true, failureCode: true, startedAt: true, completedAt: true },
+      select: { id: true, attemptNo: true, status: true, leaseOwner: true, failureCode: true, failureDetail: true, startedAt: true, completedAt: true },
     });
     return jobs.map((j) => ({
       id: j.id, attemptNo: j.attemptNo, status: j.status, leaseOwner: j.leaseOwner, failureCode: j.failureCode,
+      failureDetail: j.failureDetail,
       startedAt: j.startedAt ? j.startedAt.toISOString() : null,
       completedAt: j.completedAt ? j.completedAt.toISOString() : null,
     }));

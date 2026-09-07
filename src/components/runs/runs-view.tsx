@@ -24,7 +24,7 @@ function fmtDate(iso?: string): string {
   try { return new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)); } catch { return iso; }
 }
 interface TestOption { key: string; name: string; nameAr: string; testType: string }
-interface JobSummary { id: string; attemptNo: number; status: string; failureCode: string | null }
+interface JobSummary { id: string; attemptNo: number; status: string; failureCode: string | null; failureDetail: string | null }
 interface ResultSummary { id: string; resultCode: string; severity: string; resultSemanticFingerprint: string }
 
 const card = "surface rounded-xl border p-4";
@@ -203,7 +203,12 @@ export function RunsView() {
             <div className="mt-3 space-y-3">
               <div>
                 <p className="mb-1 text-sm font-medium">المحاولات</p>
-                {jobs.data?.length ? <ul className="text-sm">{jobs.data.map((j) => <li key={j.id}>محاولة {j.attemptNo}: {j.status}{j.failureCode ? ` (${j.failureCode})` : ""}</li>)}</ul> : <p className="text-xs text-[rgb(var(--muted))]">—</p>}
+                {jobs.data?.length ? <ul className="space-y-1 text-sm">{jobs.data.map((j) => (
+                  <li key={j.id}>
+                    محاولة {j.attemptNo}: {j.status}{j.failureCode ? ` (${j.failureCode})` : ""}
+                    {j.failureDetail && <span className="block text-xs text-red-600">السبب: {j.failureDetail}</span>}
+                  </li>
+                ))}</ul> : <p className="text-xs text-[rgb(var(--muted))]">—</p>}
               </div>
               {run.status === "COMPLETED" && (
                 <div>
