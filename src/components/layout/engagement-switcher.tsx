@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, ChevronDown, Check, Plus, Loader2 } from "lucide-react";
+import { Briefcase, ChevronDown, Check, Plus, Loader2, Users } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { EngagementSummary } from "@/lib/ui-types";
+import { EngagementMembersDialog } from "./engagement-members-dialog";
 
 interface EngagementsResponse {
   engagements: EngagementSummary[];
@@ -25,6 +26,7 @@ export function EngagementSwitcher() {
   const setEngagement = useUIStore((s) => s.setEngagement);
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [managingMembers, setManagingMembers] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -92,7 +94,17 @@ export function EngagementSwitcher() {
               );
             })}
           </ul>
-          <div className="border-t p-2">
+          <div className="space-y-1 border-t p-2">
+            {current && (
+              <button
+                type="button"
+                onClick={() => { setManagingMembers(true); setOpen(false); }}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <Users className="h-4 w-4 text-brand-600" />
+                أعضاء المهمة
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setCreating(true)}
@@ -114,6 +126,14 @@ export function EngagementSwitcher() {
             setCreating(false);
             setOpen(false);
           }}
+        />
+      )}
+
+      {managingMembers && current && (
+        <EngagementMembersDialog
+          engagementId={current.id}
+          engagementLabel={`${current.clientNameAr} — ${current.titleAr}`}
+          onClose={() => setManagingMembers(false)}
         />
       )}
     </div>
