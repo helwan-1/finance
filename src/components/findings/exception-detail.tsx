@@ -129,7 +129,8 @@ export function ExceptionDetail({
             <button
               type="button"
               className={btn}
-              disabled={exceptionAction.isPending}
+              disabled={exceptionAction.isPending || !ex.findings.some((f) => f.status === "CONCLUDED")}
+              title={ex.findings.some((f) => f.status === "CONCLUDED") ? undefined : "يتطلب نتيجة تدقيق معتمَدة أولاً (أضف نتيجة ← أرسل للمراجعة ← اعتمِدها)"}
               onClick={() => {
                 if (window.confirm("اعتماد إغلاق المسألة مع نتيجة تدقيق؟ يتطلب وجود نتيجة تدقيق معتمدة.")) {
                   exceptionAction.mutate({ action: "CONCLUDE" });
