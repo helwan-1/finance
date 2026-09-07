@@ -110,7 +110,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       fiscalYear: engagement.fiscalYear,
     };
     return NextResponse.json({ engagement: dto }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "تعذّر إنشاء المهمة" }, { status: 503 });
+  } catch (e) {
+    // Surface the real cause: log it server-side, map known Prisma failures to a
+    // clear Arabic message, and (non-production only) return the raw detail so it
+    // is visible in the UI during setup/testing.
+    console.error("[engagements:create] failed", e);
+    const code = (e as { code?: string })?.code;
+    const known: Record<string, string> = {
+      P2002: "يوجد سجل مطابق بالفعل (تعارض تفرّد) — قد يكون رقم ضريبي مكرّر.",
+      P2003: "مرجع غير صالح (مفتاح أجنبي).",
+      P2021: "جدول مفقود في قاعدة البيانات — طبّق الترحيلات (npx prisma migrate deploy).",
+      P2022: "عمود مفقود في قاعدة البيانات — طبّق الترحيلات (npx prisma migrate deploy).",
+    };
+    const error = (code && known[code]) || "تعذّر إنشاء المهمة";
+    const detail = demoAllowed() && e instanceof Error ? `${code ? code + ": " : ""}${e.message}` : undefined;
+    return NextResponse.json({ error, ...(detail ? { detail } : {}) }, { status: 503 });
   }
 }

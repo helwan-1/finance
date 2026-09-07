@@ -144,8 +144,8 @@ function NewEngagementDialog({
         }),
       });
       if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "فشل الإنشاء");
+        const d = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+        throw new Error([d.error ?? "فشل الإنشاء", d.detail].filter(Boolean).join(" — "));
       }
       return (await res.json()) as { engagement: EngagementSummary };
     },
