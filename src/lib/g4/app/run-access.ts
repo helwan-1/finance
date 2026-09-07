@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { TenantTx } from "@/lib/db/tenant";
 import { withTenantContext } from "@/lib/db/tenant";
-import { demoAllowed } from "@/lib/security/env";
+import { isProduction } from "@/lib/security/env";
 import { createDraftRun } from "@/lib/g4/run";
 import { beginPreparation, sealPreparation, type TestSelection } from "@/lib/g4/preparation";
 import { publishRun } from "@/lib/g4/publish";
@@ -376,7 +376,7 @@ export async function deleteDataset(actor: RunActor, datasetId: string): Promise
       // Surface the real cause: log it, and outside production return the detail
       // so it is visible during setup/testing rather than a generic 503.
       console.error("[datasets:delete] failed", e);
-      if (demoAllowed()) {
+      if (!isProduction()) {
         const code = (e as { code?: string })?.code;
         throw new RunValidationError(`تعذّر الحذف — ${code ? code + ": " : ""}${e instanceof Error ? e.message : String(e)}`);
       }
