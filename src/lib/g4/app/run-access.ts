@@ -339,6 +339,46 @@ export async function listDatasetsForEngagement(actor: RunActor, engagementId: s
   });
 }
 
+/**
+ * Delete an imported dataset that has NOT been consumed by any audit run. A
+ * dataset used in a run is permanent audit evidence — protected by RESTRICT
+ * foreign keys and refused here with a clear message. On delete, all source
+ * custody and canonical rows (imported records, journal entries/lines, dataset
+ * accounts, contexts, trial balances/rows, import issues) cascade automatically.
+ * There is no "edit": datasets are immutable, content-addressed evidence — to
+ * correct data, re-import a new file (which creates a new dataset).
+ */
+export async function deleteDataset(actor: RunActor, datasetId: string): Promise<{ deleted: true }> {
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    const ds = await tx.dataset.findUnique({ where: { id: datasetId }, select: { id: true, engagementId: true } });
+    if (!ds) throw new RunAccessError("NOT_FOUND", "dataset not found");
+    await assertEngagementMembership(tx, actor, ds.engagementId);
+
+    // A dataset consumed by any run is frozen audit evidence — never deletable.
+    const usedInRun = await tx.auditRunDataset.count({ where: { datasetId } });
+    if (usedInRun > 0) {
+      throw new RunValidationError(
+        "لا يمكن حذف مجموعة بيانات مستخدمة في عملية تدقيق (دليل ثابت). أنشئ استيرادًا جديدًا بدلًا من ذلك.",
+      );
+    }
+
+    // Clear the one self-referential RESTRICT FK (import_batches.resultDatasetId)
+    // so the cascade delete can proceed; every other child row cascades on delete.
+    await tx.importBatch.updateMany({ where: { resultDatasetId: datasetId }, data: { resultDatasetId: null } });
+
+    try {
+      await tx.dataset.delete({ where: { id: datasetId } });
+    } catch (e) {
+      // A remaining RESTRICT (a run/evidence table) means it is still referenced.
+      if ((e as { code?: string })?.code === "P2003") {
+        throw new RunValidationError("لا يمكن حذف هذه المجموعة لأنها مرتبطة بسجلات تدقيق.");
+      }
+      throw e;
+    }
+    return { deleted: true } as const;
+  });
+}
+
 /** Firm audit tests that have an ACTIVE current version (selectable for a run). */
 export async function listAuditTests(actor: RunActor): Promise<TestOption[]> {
   return withTenantContext(actor.auditFirmId, async (tx) => {

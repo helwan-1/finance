@@ -1,7 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Database, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Database, Loader2, Trash2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
 interface DatasetOption { id: string; kind: string; status: string; datasetHash: string | null; createdAt: string }
@@ -39,12 +40,26 @@ function formatDate(iso: string): string {
  */
 export function ImportedDatasets() {
   const engagementId = useUIStore((s) => s.engagementId);
+  const queryClient = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
   const { data, isPending } = useQuery({
     queryKey: ["datasets", engagementId],
     queryFn: () => fetchDatasets(engagementId),
     enabled: Boolean(engagementId),
   });
   const datasets = data?.datasets ?? [];
+
+  const del = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/datasets/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "تعذّر حذف مجموعة البيانات");
+      }
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["datasets"] }),
+    onError: (e) => setErr(e instanceof Error ? e.message : "تعذّر الحذف"),
+  });
 
   return (
     <div className="surface rounded-xl border p-4">
@@ -53,6 +68,8 @@ export function ImportedDatasets() {
         <h2 className="font-semibold">البيانات المستوردة</h2>
         <span className="rounded-full border px-2 py-0.5 text-xs text-[rgb(var(--muted))]">{datasets.length}</span>
       </div>
+
+      {err && <div className="mb-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-600">{err}</div>}
 
       {isPending ? (
         <p className="flex items-center gap-2 text-sm text-[rgb(var(--muted))]">
@@ -77,6 +94,21 @@ export function ImportedDatasets() {
               <span className="flex items-center gap-3 text-xs text-[rgb(var(--muted))]">
                 <span className="rounded-full border px-2 py-0.5">{STATUS_LABEL_AR[d.status] ?? d.status}</span>
                 <span>{formatDate(d.createdAt)}</span>
+                <button
+                  type="button"
+                  title="حذف مجموعة البيانات (يُرفض إن كانت مستخدمة في عملية تدقيق)"
+                  aria-label="حذف"
+                  disabled={del.isPending}
+                  onClick={() => {
+                    setErr(null);
+                    if (window.confirm(`حذف «${KIND_LABEL_AR[d.kind] ?? d.kind}»؟ لا يمكن التراجع. (يُرفض إن كانت مستخدمة في عملية تدقيق.)`)) {
+                      del.mutate(d.id);
+                    }
+                  }}
+                  className="rounded-md p-1 text-[rgb(var(--muted))] hover:bg-red-500/10 hover:text-red-600 disabled:opacity-50"
+                >
+                  {del.isPending && del.variables === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
               </span>
             </li>
           ))}
