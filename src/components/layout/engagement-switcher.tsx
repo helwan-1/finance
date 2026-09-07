@@ -120,6 +120,8 @@ export function EngagementSwitcher() {
   );
 }
 
+interface ClientOption { id: string; nameAr: string }
+
 function NewEngagementDialog({
   onClose,
   onCreated,
@@ -127,10 +129,26 @@ function NewEngagementDialog({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const [mode, setMode] = useState<"existing" | "new">("existing");
+  const [clientId, setClientId] = useState("");
   const [clientNameAr, setClientNameAr] = useState("");
   const [titleAr, setTitleAr] = useState("");
   const [fiscalYear, setFiscalYear] = useState(String(new Date().getFullYear()));
   const input = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
+
+  const { data: clientsData } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const res = await fetch("/api/clients");
+      if (!res.ok) throw new Error("failed");
+      return (await res.json()) as { clients: ClientOption[] };
+    },
+  });
+  const clients = useMemo(() => clientsData?.clients ?? [], [clientsData]);
+  // Default to "new" when there are no existing clients yet.
+  useEffect(() => {
+    if (clients.length === 0) setMode("new");
+  }, [clients.length]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -138,7 +156,7 @@ function NewEngagementDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientNameAr,
+          ...(mode === "existing" ? { clientCompanyId: clientId } : { clientNameAr }),
           titleAr,
           fiscalYear: Number.parseInt(fiscalYear, 10),
         }),
@@ -152,21 +170,57 @@ function NewEngagementDialog({
     onSuccess: (r) => onCreated(r.engagement.id),
   });
 
+  const clientReady = mode === "existing" ? Boolean(clientId) : Boolean(clientNameAr.trim());
+  const canSubmit = clientReady && Boolean(titleAr.trim()) && !mutation.isPending;
+
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onMouseDown={onClose}>
       <form
         onMouseDown={(e) => e.stopPropagation()}
-        onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }}
+        onSubmit={(e) => { e.preventDefault(); if (canSubmit) mutation.mutate(); }}
         className="surface w-full max-w-md space-y-4 rounded-2xl border p-5 shadow-card"
       >
         <h3 className="font-semibold">مهمة تدقيق جديدة</h3>
-        <label className="block space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">اسم العميل</span>
-          <input className={input} value={clientNameAr} onChange={(e) => setClientNameAr(e.target.value)} required placeholder="شركة ..." />
-        </label>
+
+        {/* Reuse an existing client (many engagements per client) or add a new one. */}
+        <div className="flex gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setMode("existing")}
+            disabled={clients.length === 0}
+            className={`flex-1 rounded-lg border px-3 py-1.5 ${mode === "existing" ? "bg-brand-600 text-white" : "hover:bg-black/5 dark:hover:bg-white/5"} disabled:opacity-50`}
+          >
+            شركة موجودة
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("new")}
+            className={`flex-1 rounded-lg border px-3 py-1.5 ${mode === "new" ? "bg-brand-600 text-white" : "hover:bg-black/5 dark:hover:bg-white/5"}`}
+          >
+            عميل جديد
+          </button>
+        </div>
+
+        {mode === "existing" ? (
+          <label className="block space-y-1 text-sm">
+            <span className="text-[rgb(var(--muted))]">الشركة</span>
+            <select className={input} value={clientId} onChange={(e) => setClientId(e.target.value)} required>
+              <option value="">— اختر شركة —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>{c.nameAr}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label className="block space-y-1 text-sm">
+            <span className="text-[rgb(var(--muted))]">اسم العميل</span>
+            <input className={input} value={clientNameAr} onChange={(e) => setClientNameAr(e.target.value)} placeholder="شركة ..." />
+          </label>
+        )}
+
         <label className="block space-y-1 text-sm">
           <span className="text-[rgb(var(--muted))]">عنوان المهمة</span>
-          <input className={input} value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required placeholder="المراجعة النظامية 2026" />
+          <input className={input} value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required placeholder="المراجعة النظامية 2027" />
         </label>
         <label className="block space-y-1 text-sm">
           <span className="text-[rgb(var(--muted))]">السنة المالية</span>
@@ -175,7 +229,7 @@ function NewEngagementDialog({
         {mutation.isError && <p className="text-sm text-severity-critical">{(mutation.error as Error).message}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">إلغاء</button>
-          <button type="submit" disabled={mutation.isPending} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
+          <button type="submit" disabled={!canSubmit} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             إنشاء
           </button>

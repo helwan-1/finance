@@ -38,6 +38,8 @@ export async function GET(): Promise<NextResponse> {
 }
 
 interface CreateBody {
+  /** Reuse an existing client; when set, clientNameAr/VAT are ignored. */
+  clientCompanyId?: string;
   clientNameAr?: string;
   clientVatNumber?: string;
   titleAr?: string;
@@ -59,13 +61,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const clientCompanyId = body.clientCompanyId?.trim() || null;
   const clientNameAr = body.clientNameAr?.trim();
   const titleAr = body.titleAr?.trim();
   const fiscalYear =
     typeof body.fiscalYear === "number" ? Math.floor(body.fiscalYear) : NaN;
-  if (!clientNameAr || !titleAr || !Number.isFinite(fiscalYear)) {
+  // Either reuse an existing client (clientCompanyId) or create one (clientNameAr).
+  if ((!clientCompanyId && !clientNameAr) || !titleAr || !Number.isFinite(fiscalYear)) {
     return NextResponse.json(
-      { error: "clientNameAr, titleAr and fiscalYear are required" },
+      { error: "اختر شركة موجودة أو أدخل اسم عميل، مع عنوان المهمة والسنة المالية" },
       { status: 400 },
     );
   }
@@ -79,18 +83,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     const engagement = await withTenantContext(session.auditFirmId, async (tx) => {
-      const client = await tx.clientCompany.create({
-        data: {
-          auditFirmId: session.auditFirmId,
-          name: clientNameAr,
-          nameAr: clientNameAr,
-          vatNumber: body.clientVatNumber?.trim() || null,
-        },
-      });
+      // Reuse the chosen client (RLS scopes it to the firm), or create a new one.
+      let clientId: string;
+      if (clientCompanyId) {
+        const existing = await tx.clientCompany.findUnique({ where: { id: clientCompanyId }, select: { id: true } });
+        if (!existing) throw new Error("CLIENT_NOT_FOUND");
+        clientId = existing.id;
+      } else {
+        const client = await tx.clientCompany.create({
+          data: {
+            auditFirmId: session.auditFirmId,
+            name: clientNameAr!,
+            nameAr: clientNameAr!,
+            vatNumber: body.clientVatNumber?.trim() || null,
+          },
+        });
+        clientId = client.id;
+      }
       return tx.auditEngagement.create({
         data: {
           auditFirmId: session.auditFirmId,
-          clientCompanyId: client.id,
+          clientCompanyId: clientId,
           title: titleAr,
           titleAr,
           fiscalYear,
@@ -111,6 +124,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
     return NextResponse.json({ engagement: dto }, { status: 201 });
   } catch (e) {
+    if (e instanceof Error && e.message === "CLIENT_NOT_FOUND") {
+      return NextResponse.json({ error: "الشركة المختارة غير موجودة" }, { status: 400 });
+    }
     // Surface the real cause: log it server-side, map known Prisma failures to a
     // clear Arabic message, and (non-production only) return the raw detail so it
     // is visible in the UI during setup/testing.
