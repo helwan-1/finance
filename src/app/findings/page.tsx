@@ -6,9 +6,9 @@ export default function FindingsPage() {
     <DashboardShell>
       <div className="mx-auto max-w-6xl space-y-5">
         <div>
-          <h1 className="text-xl font-bold">النتائج والأحكام المهنية</h1>
+          <h1 className="text-xl font-bold">نتائج التدقيق</h1>
           <p className="text-sm text-[rgb(var(--muted))]">
-            إدارة الاستثناءات (المسائل) وتحويلها إلى نتائج تدقيق موثّقة، مع دورة
+            إدارة مسائل التدقيق وتحويلها إلى نتائج تدقيق موثّقة، مع دورة
             إعداد ومراجعة واعتماد.
           </p>
         </div>

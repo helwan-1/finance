@@ -110,7 +110,7 @@ export function ExceptionDetail({
 
       {ex.linkedResultIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[rgb(var(--muted))]">النتائج المرتبطة:</span>
+          <span className="text-xs text-[rgb(var(--muted))]">المؤشّرات المرتبطة:</span>
           {ex.linkedResultIds.map((id) => (
             <span
               key={id}
@@ -131,25 +131,25 @@ export function ExceptionDetail({
               className={btn}
               disabled={exceptionAction.isPending}
               onClick={() => {
-                if (window.confirm("اعتماد إنهاء المسألة بنتيجة؟ يتطلب وجود نتيجة معتمدة.")) {
+                if (window.confirm("اعتماد إغلاق المسألة مع نتيجة تدقيق؟ يتطلب وجود نتيجة تدقيق معتمدة.")) {
                   exceptionAction.mutate({ action: "CONCLUDE" });
                 }
               }}
             >
-              إنهاء بنتيجة
+              إغلاق مع نتيجة تدقيق
             </button>
             <button
               type="button"
               className={btnDanger}
               disabled={exceptionAction.isPending}
               onClick={() => {
-                const rationale = window.prompt("سبب الإغلاق بلا نتيجة:");
+                const rationale = window.prompt("سبب الإغلاق دون نتيجة تدقيق:");
                 if (rationale && rationale.trim()) {
                   exceptionAction.mutate({ action: "DISMISS", rationale: rationale.trim() });
                 }
               }}
             >
-              إغلاق بلا نتيجة
+              إغلاق دون نتيجة تدقيق
             </button>
           </>
         )}
@@ -176,12 +176,12 @@ export function ExceptionDetail({
           <h3 className="text-sm font-bold">نتائج التدقيق ({ex.findings.length})</h3>
           <button type="button" className={btnBrand} onClick={() => setShowNewFinding(true)}>
             <Plus className="h-3.5 w-3.5" />
-            نتيجة جديدة
+            إضافة نتيجة تدقيق
           </button>
         </div>
 
         {ex.findings.length === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">لا توجد نتائج بعد.</p>
+          <p className="text-sm text-[rgb(var(--muted))]">لا توجد نتائج تدقيق بعد.</p>
         ) : (
           ex.findings.map((f) => (
             <FindingBlock
@@ -190,13 +190,13 @@ export function ExceptionDetail({
               busy={findingAction.isPending}
               onRevise={() => setReviseTarget(f)}
               onSubmit={() => {
-                if (window.confirm("إرسال النتيجة للمراجعة؟")) {
+                if (window.confirm("إرسال نتيجة التدقيق للمراجعة؟")) {
                   findingAction.mutate({ findingId: f.id, payload: { action: "SUBMIT" } });
                 }
               }}
               onApprove={() => {
                 if (!f.currentVersionId) return;
-                if (window.confirm("اعتماد النتيجة؟")) {
+                if (window.confirm("اعتماد نتيجة التدقيق؟")) {
                   findingAction.mutate({
                     findingId: f.id,
                     payload: {

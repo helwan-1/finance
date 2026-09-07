@@ -59,9 +59,11 @@ export function DocumentsView() {
       </div>
 
       <div className="surface rounded-lg border border-brand-500/20 bg-brand-50/50 px-4 py-2.5 text-xs text-[rgb(var(--muted))] dark:bg-brand-700/5">
-        💡 لأدق النتائج على بياناتك الحقيقية استخدم «استيراد معاملات (CSV)» — تُخزَّن
-        أرقامك كما هي بلا استخراج تلقائي. رفع المستندات (OCR) يتطلب تفعيل مفتاح Claude
-        لقراءة حقيقية.
+        💡 <span className="font-medium">«استيراد معاملات (CSV)»</span> هو المسار المعتمد
+        في عمليات التدقيق: يقرأ أرقامك كما هي (بلا استخراج تلقائي) ويُنشئ «البيانات المستوردة»
+        التي تعمل عليها عملية التدقيق. أما <span className="font-medium">«رفع مستند»</span> فيستخرج
+        الحركات آليًا (OCR) للوحة التحكم فقط، <span className="font-medium">ولا يُستخدم في عمليات التدقيق</span>
+        (ويتطلب تفعيل مفتاح Claude للقراءة الحقيقية).
       </div>
 
       {isPending ? (

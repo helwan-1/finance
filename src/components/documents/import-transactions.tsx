@@ -5,8 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Table2, Download, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
-interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string }
-interface ConfirmResult { datasetId?: string; rowsAccepted?: number; rowsRejected?: number; error?: string }
+interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string; rowsTotal?: number; rowsAccepted?: number; rowsRejected?: number; blockingIssues?: number }
+interface ConfirmResult { datasetId?: string; transactionsCreated?: number; error?: string }
 
 /**
  * Import a general-ledger CSV through the lineage-aware two-phase pipeline
@@ -19,6 +19,7 @@ export function ImportTransactions() {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgTone, setMsgTone] = useState<"info" | "error">("info");
 
   const mutation = useMutation({
     mutationFn: async (file: File) => {
@@ -36,15 +37,28 @@ export function ImportTransactions() {
       const confRes = await fetch(`/api/imports/${start.batchId}/confirm`, { method: "POST" });
       const conf = (await confRes.json().catch(() => ({}))) as ConfirmResult;
       if (!confRes.ok) throw new Error(conf.error ?? "فشل تأكيد الاستيراد");
-      return conf;
+      // The truthful accepted/rejected counts come from the START (validation) phase.
+      return { start, conf };
     },
-    onSuccess: (r) => {
-      setMsg(`تم استيراد ${r.rowsAccepted ?? 0} سطراً${r.rowsRejected ? ` — رُفض ${r.rowsRejected}` : ""}. الحقل جاهز لإنشاء تدقيق.`);
+    onSuccess: ({ start, conf }) => {
+      const accepted = start.rowsAccepted ?? conf.transactionsCreated ?? 0;
+      const rejected = start.rowsRejected ?? 0;
+      if (accepted === 0) {
+        setMsgTone("error");
+        setMsg(
+          `⚠️ لم يُقبل أي سطر${rejected ? ` (رُفض ${rejected})` : ""}. تحقّق من أعمدة الملف: دفتر الأستاذ يتطلب «رقم الحساب» و«تاريخ القيد» ومبلغًا («مدين»/«دائن»/«المبلغ»).`,
+        );
+      } else {
+        setMsgTone("info");
+        setMsg(
+          `تم استيراد ${accepted} سطراً${rejected ? ` — رُفض ${rejected}` : ""}. البيانات المستوردة جاهزة لإنشاء عملية تدقيق.`,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: ["datasets"] });
       void queryClient.invalidateQueries({ queryKey: ["anomalies"] });
       void queryClient.invalidateQueries({ queryKey: ["analytics"] });
     },
-    onError: (e) => setMsg((e as Error).message),
+    onError: (e) => { setMsgTone("error"); setMsg((e as Error).message); },
   });
 
   return (
@@ -63,7 +77,7 @@ export function ImportTransactions() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) { setMsg(null); mutation.mutate(f); }
+          if (f) { setMsg(null); setMsgTone("info"); mutation.mutate(f); }
           e.target.value = "";
         }}
       />
@@ -76,7 +90,7 @@ export function ImportTransactions() {
         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
         استيراد معاملات (CSV)
       </button>
-      {msg && <span className="text-xs text-[rgb(var(--muted))]">{msg}</span>}
+      {msg && <span className={`text-xs ${msgTone === "error" ? "text-severity-critical" : "text-[rgb(var(--muted))]"}`}>{msg}</span>}
     </div>
   );
 }

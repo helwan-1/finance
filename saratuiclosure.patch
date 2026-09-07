@@ -1,0 +1,1376 @@
+diff --git a/src/app/api/audit-results/[id]/route.ts b/src/app/api/audit-results/[id]/route.ts
+new file mode 100644
+index 0000000..3a497de
+--- /dev/null
++++ b/src/app/api/audit-results/[id]/route.ts
+@@ -0,0 +1,27 @@
++import { NextResponse } from "next/server";
++import { authorize } from "@/lib/auth/guard";
++import { getAuditResultDetail } from "@/lib/g4/app/run-access";
++import { runErrorResponse } from "@/lib/g4/app/http";
++
++/**
++ * GET /api/audit-results/:id — full detail for one audit result (مؤشّر): the
++ * result core, its disposition state, and every evidence row traced to the
++ * imported source record. Engagement-membership enforced in the service layer.
++ */
++export async function GET(
++  _request: Request,
++  { params }: { params: { id: string } },
++): Promise<NextResponse> {
++  const authz = await authorize("runs:view");
++  if (!authz.ok) return authz.response;
++  if (!authz.session) return NextResponse.json({ error: "UNAUTHENTICATED", code: "UNAUTHENTICATED" }, { status: 401 });
++  try {
++    const detail = await getAuditResultDetail(
++      { userId: authz.session.userId, auditFirmId: authz.session.auditFirmId },
++      params.id,
++    );
++    return NextResponse.json({ result: detail });
++  } catch (e) {
++    return runErrorResponse(e);
++  }
++}
+diff --git a/src/app/api/audit-tests/route.ts b/src/app/api/audit-tests/route.ts
+index 3de3f14..8766394 100644
+--- a/src/app/api/audit-tests/route.ts
++++ b/src/app/api/audit-tests/route.ts
+@@ -1,16 +1,61 @@
+ import { NextResponse } from "next/server";
++import type { NextRequest } from "next/server";
+ import { authorize } from "@/lib/auth/guard";
+-import { listAuditTests } from "@/lib/g4/app/run-access";
++import { listAuditTests, createAuditTest, CREATABLE_TEST_KINDS } from "@/lib/g4/app/run-access";
+ import { runErrorResponse } from "@/lib/g4/app/http";
+ 
+-/** GET /api/audit-tests — firm audit tests with an ACTIVE current version. */
++/** GET /api/audit-tests — firm audit tests with an ACTIVE current version,
++ *  plus the catalog of executor kinds that can be authored from the UI. */
+ export async function GET(): Promise<NextResponse> {
+   const authz = await authorize("runs:view");
+   if (!authz.ok) return authz.response;
+-  if (!authz.session) return NextResponse.json({ tests: [] });
++  if (!authz.session) return NextResponse.json({ tests: [], creatable: [] });
+   try {
+     const tests = await listAuditTests({ userId: authz.session.userId, auditFirmId: authz.session.auditFirmId });
+-    return NextResponse.json({ tests });
++    const creatable = Object.values(CREATABLE_TEST_KINDS);
++    return NextResponse.json({ tests, creatable });
++  } catch (e) {
++    return runErrorResponse(e);
++  }
++}
++
++interface CreateBody {
++  key?: string;
++  name?: string;
++  nameAr?: string;
++  testType?: string;
++  kind?: string;
++  requiredDatasetKinds?: string[];
++  requiresAccountMapping?: boolean;
++  params?: Record<string, unknown>;
++}
++
++/** POST /api/audit-tests — author a new firm audit test (ACTIVE version 1). */
++export async function POST(request: NextRequest): Promise<NextResponse> {
++  const authz = await authorize("runs:manage");
++  if (!authz.ok) return authz.response;
++  if (!authz.session) return NextResponse.json({ error: "UNAUTHENTICATED", code: "UNAUTHENTICATED" }, { status: 401 });
++  let body: CreateBody;
++  try {
++    body = (await request.json()) as CreateBody;
++  } catch {
++    return NextResponse.json({ error: "Invalid JSON body", code: "VALIDATION" }, { status: 422 });
++  }
++  try {
++    const out = await createAuditTest(
++      { userId: authz.session.userId, auditFirmId: authz.session.auditFirmId },
++      {
++        key: body.key ?? "",
++        name: body.name ?? "",
++        nameAr: body.nameAr ?? "",
++        testType: body.testType ?? "",
++        kind: body.kind ?? "",
++        requiredDatasetKinds: Array.isArray(body.requiredDatasetKinds) ? body.requiredDatasetKinds : [],
++        requiresAccountMapping: Boolean(body.requiresAccountMapping),
++        params: body.params && typeof body.params === "object" ? body.params : undefined,
++      },
++    );
++    return NextResponse.json(out, { status: 201 });
+   } catch (e) {
+     return runErrorResponse(e);
+   }
+diff --git a/src/app/audit-results/page.tsx b/src/app/audit-results/page.tsx
+index 8d59551..3c0a42a 100644
+--- a/src/app/audit-results/page.tsx
++++ b/src/app/audit-results/page.tsx
+@@ -6,10 +6,10 @@ export default function AuditResultsPage() {
+     <DashboardShell>
+       <div className="mx-auto max-w-6xl space-y-5">
+         <div>
+-          <h1 className="text-xl font-bold">نتائج التدقيق</h1>
++          <h1 className="text-xl font-bold">مؤشّرات التدقيق</h1>
+           <p className="text-sm text-[rgb(var(--muted))]">
+-            نتائج محرّك التدقيق (G4) مع حالتها المهنية — سجّل حكمًا على أي نتيجة أو
+-            حوّلها إلى استثناء (مسألة) مباشرةً.
++            مؤشّرات محرّك التدقيق (G4) مع حالتها المهنية — سجّل حكمًا على أي مؤشّر أو
++            حوّله إلى مسألة تدقيق مباشرةً.
+           </p>
+         </div>
+         <AuditResultsView />
+diff --git a/src/app/audit-tests/page.tsx b/src/app/audit-tests/page.tsx
+new file mode 100644
+index 0000000..b8f3d4d
+--- /dev/null
++++ b/src/app/audit-tests/page.tsx
+@@ -0,0 +1,19 @@
++import { DashboardShell } from "@/components/layout/dashboard-shell";
++import { AuditTestsView } from "@/components/audit-tests/audit-tests-view";
++
++export default function AuditTestsPage() {
++  return (
++    <DashboardShell>
++      <div className="mx-auto max-w-4xl space-y-5">
++        <div>
++          <h1 className="text-xl font-bold">اختبارات التدقيق</h1>
++          <p className="text-sm text-[rgb(var(--muted))]">
++            أنشئ اختبارات التدقيق التي يطبّقها المحرّك على البيانات المستوردة، وفعّلها لتصبح
++            متاحة للاختيار عند تجهيز نطاق الفحص في عملية التدقيق.
++          </p>
++        </div>
++        <AuditTestsView />
++      </div>
++    </DashboardShell>
++  );
++}
+diff --git a/src/app/findings/page.tsx b/src/app/findings/page.tsx
+index e24d94b..61b96cd 100644
+--- a/src/app/findings/page.tsx
++++ b/src/app/findings/page.tsx
+@@ -6,9 +6,9 @@ export default function FindingsPage() {
+     <DashboardShell>
+       <div className="mx-auto max-w-6xl space-y-5">
+         <div>
+-          <h1 className="text-xl font-bold">النتائج والأحكام المهنية</h1>
++          <h1 className="text-xl font-bold">نتائج التدقيق</h1>
+           <p className="text-sm text-[rgb(var(--muted))]">
+-            إدارة الاستثناءات (المسائل) وتحويلها إلى نتائج تدقيق موثّقة، مع دورة
++            إدارة مسائل التدقيق وتحويلها إلى نتائج تدقيق موثّقة، مع دورة
+             إعداد ومراجعة واعتماد.
+           </p>
+         </div>
+diff --git a/src/app/runs/page.tsx b/src/app/runs/page.tsx
+index cc4d993..a5e8c2a 100644
+--- a/src/app/runs/page.tsx
++++ b/src/app/runs/page.tsx
+@@ -8,8 +8,8 @@ export default function RunsPage() {
+         <div>
+           <h1 className="text-xl font-bold">عمليات التدقيق</h1>
+           <p className="text-sm text-[rgb(var(--muted))]">
+-            أنشئ عملية تدقيق، اختر مجموعات البيانات والاختبارات، ابدأ الإعداد، ثم انشر
+-            لتجميد التدقيق وإدراجه للتنفيذ في الخلفية، وراجع النتائج.
++            أنشئ عملية تدقيق، اختر البيانات المستوردة واختبارات التدقيق، ابدأ تجهيز نطاق
++            الفحص، ثم اعتمد وأرسل للتنفيذ في الخلفية، وراجع المؤشّرات.
+           </p>
+         </div>
+         <RunsView />
+diff --git a/src/components/audit-results/results-view.tsx b/src/components/audit-results/results-view.tsx
+index bba7370..ba9b4bd 100644
+--- a/src/components/audit-results/results-view.tsx
++++ b/src/components/audit-results/results-view.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { useState } from "react";
+ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+-import { ClipboardList, Plus } from "lucide-react";
++import { ClipboardList, Plus, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+ import { useUIStore } from "@/store/ui-store";
+ import {
+   SEVERITY_LABELS_AR,
+@@ -45,10 +45,33 @@ const STATE_FILTER: { value: string; labelAr: string }[] = [
+ 
+ async function fetchResults(engagementId: string): Promise<AuditResultsResponse> {
+   const res = await fetch(`/api/audit-results?engagementId=${encodeURIComponent(engagementId)}`);
+-  if (!res.ok) throw new Error("فشل تحميل نتائج التدقيق");
++  if (!res.ok) throw new Error("فشل تحميل مؤشّرات التدقيق");
+   return (await res.json()) as AuditResultsResponse;
+ }
+ 
++interface EvidenceRecord {
++  evidenceType: string;
++  datasetId: string | null;
++  sourceRowNo: number | null;
++  role: string | null;
++  cells: { h: string; v: string | null }[] | null;
++}
++interface ResultDetailDTO {
++  id: string;
++  resultKind: string;
++  resultCode: string;
++  severity: string;
++  score: string;
++  resultSemanticFingerprint: string;
++  dispositionState: string;
++  evidence: EvidenceRecord[];
++}
++async function fetchResultDetail(id: string): Promise<ResultDetailDTO> {
++  const res = await fetch(`/api/audit-results/${id}`);
++  if (!res.ok) throw new Error("فشل تحميل تفاصيل المؤشّر");
++  return ((await res.json()) as { result: ResultDetailDTO }).result;
++}
++
+ export function AuditResultsView() {
+   const engagementId = useUIStore((s) => s.engagementId);
+   const queryClient = useQueryClient();
+@@ -96,17 +119,17 @@ export function AuditResultsView() {
+             </option>
+           ))}
+         </select>
+-        <span className="text-sm text-[rgb(var(--muted))]">{results.length} نتيجة</span>
++        <span className="text-sm text-[rgb(var(--muted))]">{results.length} مؤشّر</span>
+       </div>
+ 
+       {!engagementId ? (
+-        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض النتائج." />
++        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض المؤشّرات." />
+       ) : isPending ? (
+         <EmptyCard text="جارٍ التحميل…" />
+       ) : isError ? (
+         <EmptyCard text="تعذّر تحميل البيانات. حاول مرة أخرى." tone="error" />
+       ) : results.length === 0 ? (
+-        <EmptyCard text="لا توجد نتائج تدقيق مطابقة. شغّل محرّك التدقيق (G4) لإنتاج نتائج." />
++        <EmptyCard text="لا توجد مؤشّرات تدقيق مطابقة. شغّل محرّك التدقيق (G4) لإنتاج مؤشّرات." />
+       ) : (
+         <div className="space-y-3">
+           {results.map((r) => (
+@@ -150,59 +173,128 @@ function ResultRow({
+     DISPOSITION_STATE_BADGE[state] ??
+     "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5";
+   const linked = state === "LINKED";
++  const [open, setOpen] = useState(false);
++  const detail = useQuery({
++    queryKey: ["result-detail", r.id],
++    queryFn: () => fetchResultDetail(r.id),
++    enabled: open,
++  });
+ 
+   return (
+-    <div className="surface flex flex-wrap items-center gap-3 rounded-xl border p-4 shadow-card">
+-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 dark:bg-white/5">
+-        <ClipboardList className="h-5 w-5 text-brand-600" />
+-      </div>
+-      <div className="min-w-0 flex-1">
+-        <p className="truncate font-semibold">{r.resultCode}</p>
+-        <p className="text-xs text-[rgb(var(--muted))]">
+-          {r.resultKind} · درجة {r.score}
+-        </p>
+-      </div>
+-      <span
+-        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[r.severity]}`}
+-      >
+-        {SEVERITY_LABELS_AR[r.severity]}
+-      </span>
+-      <span
+-        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${stateBadge}`}
+-      >
+-        {stateLabel}
+-      </span>
+-
+-      <div className="flex items-center gap-2">
+-        <select
+-          className={smallSelect}
+-          value=""
+-          disabled={busy}
+-          onChange={(e) => {
+-            const v = e.target.value as DispositionActionKind;
+-            if (v) onDisposition(v);
+-            e.target.value = "";
+-          }}
+-          aria-label="تسجيل حكم"
+-        >
+-          <option value="">— حكم —</option>
+-          {ACTIONS.map((a) => (
+-            <option key={a} value={a}>
+-              {DISPOSITION_ACTION_LABELS_AR[a]}
+-            </option>
+-          ))}
+-        </select>
++    <div className="surface rounded-xl border shadow-card">
++      <div className="flex flex-wrap items-center gap-3 p-4">
+         <button
+           type="button"
+-          className={btnBrand}
+-          onClick={onCreateException}
+-          disabled={busy || linked}
+-          title={linked ? "مرتبطة بمسألة بالفعل" : undefined}
++          onClick={() => setOpen((v) => !v)}
++          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"
++          aria-label={open ? "إخفاء التفاصيل" : "عرض التفاصيل"}
++          title={open ? "إخفاء التفاصيل" : "عرض التفاصيل"}
+         >
+-          <Plus className="h-3.5 w-3.5" />
+-          استثناء
++          <ClipboardList className="h-5 w-5 text-brand-600" />
++        </button>
++        <button type="button" onClick={() => setOpen((v) => !v)} className="min-w-0 flex-1 text-right">
++          <p className="truncate font-semibold">{r.resultCode}</p>
++          <p className="text-xs text-[rgb(var(--muted))]">
++            {r.resultKind} · درجة {r.score}
++          </p>
+         </button>
++        <span
++          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[r.severity]}`}
++        >
++          {SEVERITY_LABELS_AR[r.severity]}
++        </span>
++        <span
++          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${stateBadge}`}
++        >
++          {stateLabel}
++        </span>
++
++        <div className="flex items-center gap-2">
++          <button
++            type="button"
++            onClick={() => setOpen((v) => !v)}
++            className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
++          >
++            {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
++            التفاصيل
++          </button>
++          <select
++            className={smallSelect}
++            value=""
++            disabled={busy}
++            onChange={(e) => {
++              const v = e.target.value as DispositionActionKind;
++              if (v) onDisposition(v);
++              e.target.value = "";
++            }}
++            aria-label="تسجيل حكم"
++          >
++            <option value="">— حكم —</option>
++            {ACTIONS.map((a) => (
++              <option key={a} value={a}>
++                {DISPOSITION_ACTION_LABELS_AR[a]}
++              </option>
++            ))}
++          </select>
++          <button
++            type="button"
++            className={btnBrand}
++            onClick={onCreateException}
++            disabled={busy || linked}
++            title={linked ? "مرتبطة بمسألة تدقيق بالفعل" : undefined}
++          >
++            <Plus className="h-3.5 w-3.5" />
++            فتح مسألة تدقيق
++          </button>
++        </div>
+       </div>
++
++      {open && (
++        <div className="border-t p-4 text-sm">
++          <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--muted))]">
++            <span>النوع: {r.resultKind}</span>
++            <span>الخطورة: {SEVERITY_LABELS_AR[r.severity]}</span>
++            <span>الدرجة: {r.score}</span>
++            {detail.data?.resultSemanticFingerprint && (
++              <span className="font-mono">البصمة: {detail.data.resultSemanticFingerprint.slice(0, 16)}…</span>
++            )}
++          </div>
++          {detail.isPending ? (
++            <p className="flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-4 w-4 animate-spin" />جارٍ تحميل الدليل…</p>
++          ) : detail.isError ? (
++            <p className="text-severity-critical">تعذّر تحميل التفاصيل.</p>
++          ) : (detail.data?.evidence.length ?? 0) === 0 ? (
++            <p className="text-[rgb(var(--muted))]">لا يوجد دليل مرتبط بهذا المؤشّر.</p>
++          ) : (
++            <div className="space-y-3">
++              <p className="font-medium">الدليل — السجلات المصدرية ({detail.data!.evidence.length})</p>
++              {detail.data!.evidence.map((e, i) => (
++                <div key={i} className="rounded-lg border p-3">
++                  <p className="mb-1 text-xs text-[rgb(var(--muted))]">
++                    {e.evidenceType}{e.role ? ` · ${e.role}` : ""}{e.sourceRowNo != null ? ` · صف ${e.sourceRowNo}` : ""}
++                  </p>
++                  {e.cells && e.cells.length > 0 ? (
++                    <div className="overflow-x-auto">
++                      <table className="w-full text-right text-xs">
++                        <tbody>
++                          {e.cells.map((c, j) => (
++                            <tr key={j} className="border-b last:border-0">
++                              <td className="py-1 pl-3 font-medium text-[rgb(var(--muted))]">{c.h}</td>
++                              <td className="py-1 font-mono">{c.v ?? "—"}</td>
++                            </tr>
++                          ))}
++                        </tbody>
++                      </table>
++                    </div>
++                  ) : (
++                    <p className="text-xs text-[rgb(var(--muted))]">لا تتوفّر خلايا مصدرية لهذا الدليل.</p>
++                  )}
++                </div>
++              ))}
++            </div>
++          )}
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/components/audit-tests/audit-tests-view.tsx b/src/components/audit-tests/audit-tests-view.tsx
+new file mode 100644
+index 0000000..69e3517
+--- /dev/null
++++ b/src/components/audit-tests/audit-tests-view.tsx
+@@ -0,0 +1,220 @@
++"use client";
++
++import { useState } from "react";
++import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
++import { Loader2, Plus, FlaskConical, RefreshCw } from "lucide-react";
++
++interface TestItem { key: string; name: string; nameAr: string; testType: string }
++interface Creatable { testType: string; kind: string; datasetKinds: string[]; params?: "round" | "dupamt" }
++
++const KIND_LABEL_AR: Record<string, string> = {
++  POPULATION_MEMBER: "اكتمال المجتمع (مؤشّر لكل سجل)",
++  SOURCE_TO_CANONICAL_MISMATCH: "تطابق المصدر مع الترحيل المحاسبي",
++  UNBALANCED_JE: "قيود يومية غير متوازنة",
++  INVALID_DEBIT_CREDIT: "قيم مدين/دائن غير صالحة",
++  TB_ACCOUNT_DUPLICATION: "تكرار حساب في ميزان المراجعة",
++  ROUND_NUMBER_FREQUENCY: "تكرار المبالغ المدوّرة",
++  DUPLICATE_AMOUNT_FREQUENCY: "تكرار المبالغ المتطابقة",
++};
++// Sensible starting values for statistical parameters (user may adjust).
++const STAT_DEFAULTS: Record<string, Record<string, string>> = {
++  round: { roundingQuantum: "1000.00", minimumPopulation: "1", minimumRoundCount: "1", rateThresholdNum: "1", rateThresholdDenom: "2" },
++  dupamt: { minimumOccurrenceCount: "2" },
++};
++const STAT_FIELDS: Record<string, { key: string; labelAr: string }[]> = {
++  round: [
++    { key: "roundingQuantum", labelAr: "وحدة التدوير (مثال 1000.00)" },
++    { key: "minimumPopulation", labelAr: "أدنى حجم مجتمع" },
++    { key: "minimumRoundCount", labelAr: "أدنى عدد مبالغ مدوّرة" },
++    { key: "rateThresholdNum", labelAr: "بسط نسبة العتبة" },
++    { key: "rateThresholdDenom", labelAr: "مقام نسبة العتبة" },
++  ],
++  dupamt: [{ key: "minimumOccurrenceCount", labelAr: "أدنى عدد تكرارات (≥ 2)" }],
++};
++const TESTTYPE_LABEL_AR: Record<string, string> = {
++  DATA_QUALITY: "جودة البيانات",
++  ACCOUNTING_INTEGRITY: "سلامة محاسبية",
++  STATISTICAL: "إحصائي",
++};
++const DS_LABEL_AR: Record<string, string> = {
++  GENERAL_LEDGER: "دفتر الأستاذ",
++  TRIAL_BALANCE: "ميزان المراجعة",
++  BANK: "كشف بنكي",
++  OTHER: "أخرى",
++};
++
++const card = "surface rounded-xl border p-4";
++const btn = "inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60";
++const ghost = "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60";
++const field = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
++
++async function jget<T>(url: string): Promise<T> {
++  const r = await fetch(url);
++  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "فشل التحميل");
++  return (await r.json()) as T;
++}
++
++export function AuditTestsView() {
++  const qc = useQueryClient();
++  const [showForm, setShowForm] = useState(false);
++  const [err, setErr] = useState<string | null>(null);
++  const [registryKey, setRegistryKey] = useState("");
++  const [key, setKey] = useState("");
++  const [nameAr, setNameAr] = useState("");
++  const [name, setName] = useState("");
++  const [pickedDs, setPickedDs] = useState<Set<string>>(new Set());
++  const [params, setParams] = useState<Record<string, string>>({});
++
++  const data = useQuery({
++    queryKey: ["audit-tests-admin"],
++    queryFn: () => jget<{ tests: TestItem[]; creatable: Creatable[] }>("/api/audit-tests"),
++  });
++  const creatable = data.data?.creatable ?? [];
++  const selected = creatable.find((c) => `${c.testType}:${c.kind}` === registryKey) ?? null;
++
++  const onSelectKind = (rk: string) => {
++    setRegistryKey(rk);
++    setPickedDs(new Set());
++    const spec = creatable.find((c) => `${c.testType}:${c.kind}` === rk);
++    setParams(spec?.params ? { ...STAT_DEFAULTS[spec.params] } : {});
++  };
++
++  const reset = () => { setRegistryKey(""); setKey(""); setNameAr(""); setName(""); setPickedDs(new Set()); setParams({}); setErr(null); };
++
++  const create = useMutation({
++    mutationFn: async () => {
++      if (!selected) throw new Error("اختر نوع الاختبار");
++      const r = await fetch("/api/audit-tests", {
++        method: "POST",
++        headers: { "content-type": "application/json" },
++        body: JSON.stringify({
++          key, nameAr, name, testType: selected.testType, kind: selected.kind,
++          requiredDatasetKinds: [...pickedDs],
++          ...(selected.params ? { params } : {}),
++        }),
++      });
++      const d = (await r.json().catch(() => ({}))) as { error?: string };
++      if (!r.ok) throw new Error(d.error ?? "فشل إنشاء الاختبار");
++    },
++    onSuccess: () => { reset(); setShowForm(false); void qc.invalidateQueries({ queryKey: ["audit-tests-admin"] }); },
++    onError: (e) => setErr((e as Error).message),
++  });
++
++  const paramsComplete = !selected?.params || (STAT_FIELDS[selected.params] ?? []).every((f) => (params[f.key] ?? "").trim() !== "");
++  const canSubmit = Boolean(selected) && key.trim().length >= 2 && Boolean(nameAr.trim() || name.trim()) && pickedDs.size > 0 && paramsComplete;
++
++  return (
++    <div className="space-y-4">
++      {err && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600">{err}</div>}
++
++      <div className={card}>
++        <div className="mb-3 flex items-center justify-between">
++          <h2 className="font-semibold">اختبارات التدقيق المُفعّلة</h2>
++          <div className="flex gap-2">
++            <button className={ghost} onClick={() => void data.refetch()}><RefreshCw className="h-4 w-4" />تحديث</button>
++            <button className={btn} onClick={() => { setShowForm((v) => !v); setErr(null); }}>
++              <Plus className="h-4 w-4" />اختبار جديد
++            </button>
++          </div>
++        </div>
++        {data.isPending ? (
++          <p className="text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p>
++        ) : (data.data?.tests.length ?? 0) === 0 ? (
++          <p className="text-sm text-[rgb(var(--muted))]">لا توجد اختبارات بعد. أنشئ اختبارًا ليصبح متاحًا في عمليات التدقيق.</p>
++        ) : (
++          <ul className="divide-y">
++            {data.data!.tests.map((t) => (
++              <li key={t.key} className="flex items-center justify-between py-2 text-sm">
++                <span className="flex items-center gap-2">
++                  <FlaskConical className="h-4 w-4 text-brand-600" />
++                  <span>{t.nameAr || t.name}</span>
++                  <span className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[11px] dark:bg-white/5">{t.key}</span>
++                </span>
++                <span className="rounded-full border px-2 py-0.5 text-xs">{TESTTYPE_LABEL_AR[t.testType] ?? t.testType}</span>
++              </li>
++            ))}
++          </ul>
++        )}
++      </div>
++
++      {showForm && (
++        <div className={card}>
++          <h3 className="mb-3 font-semibold">إنشاء اختبار تدقيق جديد</h3>
++          <div className="space-y-3">
++            <div>
++              <label className="mb-1 block text-sm font-medium">نوع الاختبار</label>
++              <select className={field} value={registryKey} onChange={(e) => onSelectKind(e.target.value)}>
++                <option value="">— اختر نوع الاختبار —</option>
++                {creatable.map((c) => (
++                  <option key={`${c.testType}:${c.kind}`} value={`${c.testType}:${c.kind}`}>
++                    {KIND_LABEL_AR[c.kind] ?? c.kind} ({TESTTYPE_LABEL_AR[c.testType] ?? c.testType})
++                  </option>
++                ))}
++              </select>
++            </div>
++
++            <div className="grid gap-3 sm:grid-cols-2">
++              <div>
++                <label className="mb-1 block text-sm font-medium">المفتاح (رمز فريد)</label>
++                <input className={field} value={key} onChange={(e) => setKey(e.target.value)} placeholder="مثال: GL-BALANCE" dir="ltr" />
++              </div>
++              <div>
++                <label className="mb-1 block text-sm font-medium">الاسم (عربي)</label>
++                <input className={field} value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="اسم الاختبار بالعربية" />
++              </div>
++            </div>
++            <div>
++              <label className="mb-1 block text-sm font-medium">الاسم (إنجليزي — اختياري)</label>
++              <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="English name (optional)" dir="ltr" />
++            </div>
++
++            {selected && (
++              <div>
++                <label className="mb-1 block text-sm font-medium">أنواع البيانات المطلوبة</label>
++                <div className="flex flex-wrap gap-3">
++                  {selected.datasetKinds.map((k) => (
++                    <label key={k} className="flex items-center gap-2 text-sm">
++                      <input
++                        type="checkbox"
++                        checked={pickedDs.has(k)}
++                        onChange={() => { const n = new Set(pickedDs); if (n.has(k)) n.delete(k); else n.add(k); setPickedDs(n); }}
++                      />
++                      <span>{DS_LABEL_AR[k] ?? k}</span>
++                    </label>
++                  ))}
++                </div>
++              </div>
++            )}
++
++            {selected?.params && (
++              <div>
++                <label className="mb-1 block text-sm font-medium">معاملات الاختبار الإحصائي (مُجمّدة مع الاختبار)</label>
++                <div className="grid gap-3 sm:grid-cols-2">
++                  {(STAT_FIELDS[selected.params] ?? []).map((f) => (
++                    <div key={f.key}>
++                      <label className="mb-1 block text-xs text-[rgb(var(--muted))]">{f.labelAr}</label>
++                      <input
++                        className={field}
++                        dir="ltr"
++                        inputMode={f.key === "roundingQuantum" ? "decimal" : "numeric"}
++                        value={params[f.key] ?? ""}
++                        onChange={(e) => setParams({ ...params, [f.key]: e.target.value })}
++                      />
++                    </div>
++                  ))}
++                </div>
++              </div>
++            )}
++
++            <div className="flex gap-2">
++              <button className={btn} disabled={!canSubmit || create.isPending} onClick={() => { setErr(null); create.mutate(); }}>
++                {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}إنشاء وتفعيل
++              </button>
++              <button className={ghost} onClick={() => { reset(); setShowForm(false); }}>إلغاء</button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/documents/documents-view.tsx b/src/components/documents/documents-view.tsx
+index f40b24a..d26cca0 100644
+--- a/src/components/documents/documents-view.tsx
++++ b/src/components/documents/documents-view.tsx
+@@ -59,9 +59,11 @@ export function DocumentsView() {
+       </div>
+ 
+       <div className="surface rounded-lg border border-brand-500/20 bg-brand-50/50 px-4 py-2.5 text-xs text-[rgb(var(--muted))] dark:bg-brand-700/5">
+-        💡 لأدق النتائج على بياناتك الحقيقية استخدم «استيراد معاملات (CSV)» — تُخزَّن
+-        أرقامك كما هي بلا استخراج تلقائي. رفع المستندات (OCR) يتطلب تفعيل مفتاح Claude
+-        لقراءة حقيقية.
++        💡 <span className="font-medium">«استيراد معاملات (CSV)»</span> هو المسار المعتمد
++        في عمليات التدقيق: يقرأ أرقامك كما هي (بلا استخراج تلقائي) ويُنشئ «البيانات المستوردة»
++        التي تعمل عليها عملية التدقيق. أما <span className="font-medium">«رفع مستند»</span> فيستخرج
++        الحركات آليًا (OCR) للوحة التحكم فقط، <span className="font-medium">ولا يُستخدم في عمليات التدقيق</span>
++        (ويتطلب تفعيل مفتاح Claude للقراءة الحقيقية).
+       </div>
+ 
+       {isPending ? (
+diff --git a/src/components/documents/import-transactions.tsx b/src/components/documents/import-transactions.tsx
+index 2fb1850..96609ab 100644
+--- a/src/components/documents/import-transactions.tsx
++++ b/src/components/documents/import-transactions.tsx
+@@ -5,8 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { Table2, Download, Loader2 } from "lucide-react";
+ import { useUIStore } from "@/store/ui-store";
+ 
+-interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string }
+-interface ConfirmResult { datasetId?: string; rowsAccepted?: number; rowsRejected?: number; error?: string }
++interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string; rowsTotal?: number; rowsAccepted?: number; rowsRejected?: number; blockingIssues?: number }
++interface ConfirmResult { datasetId?: string; transactionsCreated?: number; error?: string }
+ 
+ /**
+  * Import a general-ledger CSV through the lineage-aware two-phase pipeline
+@@ -19,6 +19,7 @@ export function ImportTransactions() {
+   const queryClient = useQueryClient();
+   const inputRef = useRef<HTMLInputElement>(null);
+   const [msg, setMsg] = useState<string | null>(null);
++  const [msgTone, setMsgTone] = useState<"info" | "error">("info");
+ 
+   const mutation = useMutation({
+     mutationFn: async (file: File) => {
+@@ -36,15 +37,28 @@ export function ImportTransactions() {
+       const confRes = await fetch(`/api/imports/${start.batchId}/confirm`, { method: "POST" });
+       const conf = (await confRes.json().catch(() => ({}))) as ConfirmResult;
+       if (!confRes.ok) throw new Error(conf.error ?? "فشل تأكيد الاستيراد");
+-      return conf;
++      // The truthful accepted/rejected counts come from the START (validation) phase.
++      return { start, conf };
+     },
+-    onSuccess: (r) => {
+-      setMsg(`تم استيراد ${r.rowsAccepted ?? 0} سطراً${r.rowsRejected ? ` — رُفض ${r.rowsRejected}` : ""}. الحقل جاهز لإنشاء تدقيق.`);
++    onSuccess: ({ start, conf }) => {
++      const accepted = start.rowsAccepted ?? conf.transactionsCreated ?? 0;
++      const rejected = start.rowsRejected ?? 0;
++      if (accepted === 0) {
++        setMsgTone("error");
++        setMsg(
++          `⚠️ لم يُقبل أي سطر${rejected ? ` (رُفض ${rejected})` : ""}. تحقّق من أعمدة الملف: دفتر الأستاذ يتطلب «رقم الحساب» و«تاريخ القيد» ومبلغًا («مدين»/«دائن»/«المبلغ»).`,
++        );
++      } else {
++        setMsgTone("info");
++        setMsg(
++          `تم استيراد ${accepted} سطراً${rejected ? ` — رُفض ${rejected}` : ""}. البيانات المستوردة جاهزة لإنشاء عملية تدقيق.`,
++        );
++      }
+       void queryClient.invalidateQueries({ queryKey: ["datasets"] });
+       void queryClient.invalidateQueries({ queryKey: ["anomalies"] });
+       void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+     },
+-    onError: (e) => setMsg((e as Error).message),
++    onError: (e) => { setMsgTone("error"); setMsg((e as Error).message); },
+   });
+ 
+   return (
+@@ -63,7 +77,7 @@ export function ImportTransactions() {
+         className="hidden"
+         onChange={(e) => {
+           const f = e.target.files?.[0];
+-          if (f) { setMsg(null); mutation.mutate(f); }
++          if (f) { setMsg(null); setMsgTone("info"); mutation.mutate(f); }
+           e.target.value = "";
+         }}
+       />
+@@ -76,7 +90,7 @@ export function ImportTransactions() {
+         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+         استيراد معاملات (CSV)
+       </button>
+-      {msg && <span className="text-xs text-[rgb(var(--muted))]">{msg}</span>}
++      {msg && <span className={`text-xs ${msgTone === "error" ? "text-severity-critical" : "text-[rgb(var(--muted))]"}`}>{msg}</span>}
+     </div>
+   );
+ }
+diff --git a/src/components/findings/exception-detail.tsx b/src/components/findings/exception-detail.tsx
+index cb98d18..b866776 100644
+--- a/src/components/findings/exception-detail.tsx
++++ b/src/components/findings/exception-detail.tsx
+@@ -110,7 +110,7 @@ export function ExceptionDetail({
+ 
+       {ex.linkedResultIds.length > 0 && (
+         <div className="flex flex-wrap items-center gap-2">
+-          <span className="text-xs text-[rgb(var(--muted))]">النتائج المرتبطة:</span>
++          <span className="text-xs text-[rgb(var(--muted))]">المؤشّرات المرتبطة:</span>
+           {ex.linkedResultIds.map((id) => (
+             <span
+               key={id}
+@@ -131,25 +131,25 @@ export function ExceptionDetail({
+               className={btn}
+               disabled={exceptionAction.isPending}
+               onClick={() => {
+-                if (window.confirm("اعتماد إنهاء المسألة بنتيجة؟ يتطلب وجود نتيجة معتمدة.")) {
++                if (window.confirm("اعتماد إغلاق المسألة مع نتيجة تدقيق؟ يتطلب وجود نتيجة تدقيق معتمدة.")) {
+                   exceptionAction.mutate({ action: "CONCLUDE" });
+                 }
+               }}
+             >
+-              إنهاء بنتيجة
++              إغلاق مع نتيجة تدقيق
+             </button>
+             <button
+               type="button"
+               className={btnDanger}
+               disabled={exceptionAction.isPending}
+               onClick={() => {
+-                const rationale = window.prompt("سبب الإغلاق بلا نتيجة:");
++                const rationale = window.prompt("سبب الإغلاق دون نتيجة تدقيق:");
+                 if (rationale && rationale.trim()) {
+                   exceptionAction.mutate({ action: "DISMISS", rationale: rationale.trim() });
+                 }
+               }}
+             >
+-              إغلاق بلا نتيجة
++              إغلاق دون نتيجة تدقيق
+             </button>
+           </>
+         )}
+@@ -176,12 +176,12 @@ export function ExceptionDetail({
+           <h3 className="text-sm font-bold">نتائج التدقيق ({ex.findings.length})</h3>
+           <button type="button" className={btnBrand} onClick={() => setShowNewFinding(true)}>
+             <Plus className="h-3.5 w-3.5" />
+-            نتيجة جديدة
++            إضافة نتيجة تدقيق
+           </button>
+         </div>
+ 
+         {ex.findings.length === 0 ? (
+-          <p className="text-sm text-[rgb(var(--muted))]">لا توجد نتائج بعد.</p>
++          <p className="text-sm text-[rgb(var(--muted))]">لا توجد نتائج تدقيق بعد.</p>
+         ) : (
+           ex.findings.map((f) => (
+             <FindingBlock
+@@ -190,13 +190,13 @@ export function ExceptionDetail({
+               busy={findingAction.isPending}
+               onRevise={() => setReviseTarget(f)}
+               onSubmit={() => {
+-                if (window.confirm("إرسال النتيجة للمراجعة؟")) {
++                if (window.confirm("إرسال نتيجة التدقيق للمراجعة؟")) {
+                   findingAction.mutate({ findingId: f.id, payload: { action: "SUBMIT" } });
+                 }
+               }}
+               onApprove={() => {
+                 if (!f.currentVersionId) return;
+-                if (window.confirm("اعتماد النتيجة؟")) {
++                if (window.confirm("اعتماد نتيجة التدقيق؟")) {
+                   findingAction.mutate({
+                     findingId: f.id,
+                     payload: {
+diff --git a/src/components/findings/finding-form-dialog.tsx b/src/components/findings/finding-form-dialog.tsx
+index b508e0b..67a79e0 100644
+--- a/src/components/findings/finding-form-dialog.tsx
++++ b/src/components/findings/finding-form-dialog.tsx
+@@ -108,7 +108,7 @@ export function FindingFormDialog({
+       });
+       if (!res.ok) {
+         const body = (await res.json().catch(() => ({}))) as { error?: string };
+-        throw new Error(body.error || "فشل حفظ النتيجة");
++        throw new Error(body.error || "فشل حفظ نتيجة التدقيق");
+       }
+     },
+     onSuccess: async () => {
+@@ -116,7 +116,7 @@ export function FindingFormDialog({
+       await queryClient.invalidateQueries({ queryKey: ["exceptions"] });
+       onClose();
+     },
+-    onError: (e) => setError(e instanceof Error ? e.message : "فشل حفظ النتيجة"),
++    onError: (e) => setError(e instanceof Error ? e.message : "فشل حفظ نتيجة التدقيق"),
+   });
+ 
+   const canSubmit =
+@@ -144,7 +144,7 @@ export function FindingFormDialog({
+       >
+         <div className="flex items-center justify-between">
+           <h2 className="text-lg font-bold">
+-            {mode === "create" ? "نتيجة تدقيق جديدة" : "تعديل النتيجة (نسخة جديدة)"}
++            {mode === "create" ? "نتيجة تدقيق جديدة" : "تعديل نتيجة التدقيق (نسخة جديدة)"}
+           </h2>
+           <button type="button" onClick={onClose} aria-label="إغلاق">
+             <X className="h-5 w-5 text-[rgb(var(--muted))]" />
+diff --git a/src/components/findings/findings-view.tsx b/src/components/findings/findings-view.tsx
+index 1378164..fd4c3de 100644
+--- a/src/components/findings/findings-view.tsx
++++ b/src/components/findings/findings-view.tsx
+@@ -39,7 +39,7 @@ async function fetchExceptions(
+   const qs = new URLSearchParams({ engagementId });
+   if (status !== "ALL") qs.set("status", status);
+   const res = await fetch(`/api/findings?${qs.toString()}`);
+-  if (!res.ok) throw new Error("فشل تحميل المسائل");
++  if (!res.ok) throw new Error("فشل تحميل مسائل التدقيق");
+   return (await res.json()) as ExceptionsResponse;
+ }
+ 
+@@ -81,18 +81,18 @@ export function FindingsView() {
+           disabled={!engagementId}
+         >
+           <Plus className="h-4 w-4" />
+-          استثناء جديد
++          فتح مسألة تدقيق
+         </button>
+       </div>
+ 
+       {!engagementId ? (
+-        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض المسائل." />
++        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض مسائل التدقيق." />
+       ) : isPending ? (
+         <EmptyCard text="جارٍ التحميل…" />
+       ) : isError ? (
+         <EmptyCard text="تعذّر تحميل البيانات. حاول مرة أخرى." tone="error" />
+       ) : exceptions.length === 0 ? (
+-        <EmptyCard text="لا توجد مسائل بعد. ابدأ بإنشاء استثناء من نتيجة تدقيق." />
++        <EmptyCard text="لا توجد مسائل تدقيق بعد. ابدأ بفتح مسألة من مؤشّر تدقيق." />
+       ) : (
+         <div className="space-y-3">
+           {exceptions.map((ex) => (
+@@ -143,7 +143,7 @@ function ExceptionRow({
+         <div className="min-w-0 flex-1">
+           <p className="truncate font-semibold">{ex.titleAr || ex.title}</p>
+           <p className="text-xs text-[rgb(var(--muted))]">
+-            {ex.linkedResultCount} نتيجة مرتبطة · {ex.findingCount} نتيجة تدقيق
++            {ex.linkedResultCount} مؤشّر مرتبط · {ex.findingCount} نتيجة تدقيق
+           </p>
+         </div>
+         <span
+diff --git a/src/components/findings/new-exception-dialog.tsx b/src/components/findings/new-exception-dialog.tsx
+index 877898a..a96540c 100644
+--- a/src/components/findings/new-exception-dialog.tsx
++++ b/src/components/findings/new-exception-dialog.tsx
+@@ -17,7 +17,7 @@ const secondaryBtn = "rounded-lg border px-4 py-2 text-sm";
+ 
+ async function fetchResults(engagementId: string): Promise<AuditResultsResponse> {
+   const res = await fetch(`/api/audit-results?engagementId=${encodeURIComponent(engagementId)}`);
+-  if (!res.ok) throw new Error("فشل تحميل نتائج التدقيق");
++  if (!res.ok) throw new Error("فشل تحميل مؤشّرات التدقيق");
+   return (await res.json()) as AuditResultsResponse;
+ }
+ 
+@@ -65,7 +65,7 @@ export function NewExceptionDialog({
+       });
+       if (!res.ok) {
+         const body = (await res.json().catch(() => ({}))) as { error?: string };
+-        throw new Error(body.error || "فشل إنشاء الاستثناء");
++        throw new Error(body.error || "فشل فتح مسألة التدقيق");
+       }
+     },
+     onSuccess: async () => {
+@@ -73,7 +73,7 @@ export function NewExceptionDialog({
+       await queryClient.invalidateQueries({ queryKey: ["audit-results"] });
+       onClose();
+     },
+-    onError: (e) => setError(e instanceof Error ? e.message : "فشل إنشاء الاستثناء"),
++    onError: (e) => setError(e instanceof Error ? e.message : "فشل فتح مسألة التدقيق"),
+   });
+ 
+   const canSubmit = Boolean(firstResultId) && Boolean(title || titleAr) && !mutation.isPending;
+@@ -93,24 +93,29 @@ export function NewExceptionDialog({
+         className="surface max-h-[85vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border p-5 shadow-card"
+       >
+         <div className="flex items-center justify-between">
+-          <h2 className="text-lg font-bold">استثناء جديد</h2>
++          <h2 className="text-lg font-bold">فتح مسألة تدقيق</h2>
+           <button type="button" onClick={onClose} aria-label="إغلاق">
+             <X className="h-5 w-5 text-[rgb(var(--muted))]" />
+           </button>
+         </div>
+ 
+         <div className="space-y-1">
+-          <label className="text-sm font-medium">نتيجة التدقيق المصدر</label>
++          <label className="text-sm font-medium">المؤشّر المصدر</label>
++          {!presetResultId && (
++            <p className="text-xs text-[rgb(var(--muted))]">
++              كل مسألة تدقيق تبدأ من مؤشّر. يمكنك أيضًا فتح المسألة مباشرةً من شاشة «مؤشّرات التدقيق» على المؤشّر المحدّد.
++            </p>
++          )}
+           {presetResultId ? (
+             <p className="rounded-lg border p-3 text-sm font-mono">
+               {presetResultLabel ?? presetResultId}
+             </p>
+           ) : isPending ? (
+-            <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل النتائج…</p>
++            <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل المؤشّرات…</p>
+           ) : results.length === 0 ? (
+             <p className="rounded-lg border p-3 text-sm text-[rgb(var(--muted))]">
+-              لا توجد نتائج تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4)
+-              لإنتاج نتائج يمكن إنشاء استثناء منها.
++              لا توجد مؤشّرات تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4)
++              لإنتاج مؤشّرات يمكن فتح مسألة تدقيق منها.
+             </p>
+           ) : (
+             <select
+@@ -119,7 +124,7 @@ export function NewExceptionDialog({
+               onChange={(e) => setFirstResultId(e.target.value)}
+               required
+             >
+-              <option value="">— اختر نتيجة —</option>
++              <option value="">— اختر مؤشّرًا —</option>
+               {results.map((r) => (
+                 <option key={r.id} value={r.id}>
+                   {r.resultCode} · {SEVERITY_LABELS_AR[r.severity]} · {r.dispositionState}
+diff --git a/src/components/findings/stat-cards.tsx b/src/components/findings/stat-cards.tsx
+index b5076fa..b2d5e1b 100644
+--- a/src/components/findings/stat-cards.tsx
++++ b/src/components/findings/stat-cards.tsx
+@@ -15,13 +15,13 @@ export function StatCards({ exceptions }: { exceptions: ExceptionDTO[] }) {
+       tone: "text-severity-medium",
+     },
+     {
+-      labelAr: "منتهية بنتيجة",
++      labelAr: "منتهية بنتيجة تدقيق",
+       value: count("CONCLUDED_WITH_FINDING"),
+       icon: FileCheck2,
+       tone: "text-severity-critical",
+     },
+     {
+-      labelAr: "مغلقة بلا نتيجة",
++      labelAr: "مغلقة دون نتيجة تدقيق",
+       value: count("CLOSED_NO_FINDING"),
+       icon: Archive,
+       tone: "text-[rgb(var(--muted))]",
+diff --git a/src/components/layout/sidebar.tsx b/src/components/layout/sidebar.tsx
+index 9c9fe4e..3540ce3 100644
+--- a/src/components/layout/sidebar.tsx
++++ b/src/components/layout/sidebar.tsx
+@@ -16,6 +16,7 @@ import {
+   Gavel,
+   ClipboardList,
+   Play,
++  FlaskConical,
+ } from "lucide-react";
+ import { useUIStore } from "@/store/ui-store";
+ 
+@@ -32,9 +33,10 @@ const NAV_ITEMS: NavItem[] = [
+   { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
+   { labelAr: "قواعد التدقيق", icon: Scale, href: "/rules" },
+   { labelAr: "الحالات الشاذة", icon: ShieldAlert, href: "/anomalies" },
++  { labelAr: "اختبارات التدقيق", icon: FlaskConical, href: "/audit-tests" as Route },
+   { labelAr: "عمليات التدقيق", icon: Play, href: "/runs" as Route },
+-  { labelAr: "نتائج التدقيق", icon: ClipboardList, href: "/audit-results" },
+-  { labelAr: "النتائج والأحكام", icon: Gavel, href: "/findings" },
++  { labelAr: "مؤشّرات التدقيق", icon: ClipboardList, href: "/audit-results" },
++  { labelAr: "نتائج التدقيق", icon: Gavel, href: "/findings" },
+   { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
+   { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
+   { labelAr: "الإعدادات", icon: Settings, href: "/settings" },
+diff --git a/src/components/runs/runs-view.tsx b/src/components/runs/runs-view.tsx
+index e6bc2eb..692004e 100644
+--- a/src/components/runs/runs-view.tsx
++++ b/src/components/runs/runs-view.tsx
+@@ -41,6 +41,10 @@ export function RunsView() {
+     queryKey: ["runs", engagementId],
+     queryFn: () => jget<{ runs: RunSummary[] }>(`/api/runs?engagementId=${engagementId}`).then((d) => d.runs),
+     enabled: Boolean(engagementId),
++    // Auto-refresh while any run is still working, so QUEUED/RUNNING flips to
++    // COMPLETED in the list without a manual refresh.
++    refetchInterval: (q) =>
++      (q.state.data as RunSummary[] | undefined)?.some((r) => ["PREPARING", "QUEUED", "RUNNING"].includes(r.status)) ? 3000 : false,
+   });
+   const datasets = useQuery({
+     queryKey: ["datasets", engagementId],
+@@ -102,7 +106,7 @@ export function RunsView() {
+           <div className="flex gap-2">
+             <button className={ghost} onClick={() => void runs.refetch()}><RefreshCw className="h-4 w-4" />تحديث</button>
+             <button className={btn} disabled={createRun.isPending} onClick={() => { setErr(null); createRun.mutate(); }}>
+-              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}إنشاء تدقيق
++              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}إنشاء عملية تدقيق
+             </button>
+           </div>
+         </div>
+@@ -124,19 +128,19 @@ export function RunsView() {
+ 
+       {run && (
+         <div className={card}>
+-          <h3 className="mb-2 font-semibold">تفاصيل التدقيق — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
++          <h3 className="mb-2 font-semibold">تفاصيل عملية التدقيق — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
+           <p className="mb-3 text-sm">الحالة: <span className="rounded-full border px-2 py-0.5 text-xs">{run.status}</span></p>
+ 
+           {(run.status === "DRAFT" || run.status === "PREPARING") && (!prep.data || prep.data.status === "FAILED") && (
+             <div className="space-y-3">
+               <div>
+-                <p className="mb-1 text-sm font-medium">مجموعات البيانات</p>
++                <p className="mb-1 text-sm font-medium">البيانات المستوردة</p>
+                 {datasets.data?.length ? datasets.data.map((d) => (
+                   <label key={d.id} className="flex items-center gap-2 py-1 text-sm">
+                     <input type="checkbox" checked={pickedDatasets.has(d.id)} onChange={() => toggle(pickedDatasets, d.id, setPickedDatasets)} />
+                     <span>{d.kind} — {d.id.slice(0, 10)} <span className="text-[rgb(var(--muted))]">({d.status})</span></span>
+                   </label>
+-                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد مجموعات بيانات. استورد ملفاً أولاً.</p>}
++                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد بيانات مستوردة. استورد ملفاً أولاً.</p>}
+               </div>
+               <div>
+                 <p className="mb-1 text-sm font-medium">اختبارات التدقيق</p>
+@@ -147,20 +151,20 @@ export function RunsView() {
+                   </label>
+                 )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد اختبارات مُفعّلة.</p>}
+               </div>
+-              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل الإعداد ({prep.data.failureCode}). عدّل الاختيار وابدأ جيلاً جديداً.</p>}
++              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل تجهيز نطاق الفحص ({prep.data.failureCode}). عدّل الاختيار وابدأ من جديد.</p>}
+               <button className={btn} disabled={!canBegin || beginPrep.isPending} onClick={() => { setErr(null); beginPrep.mutate(); }}>
+-                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}ابدأ الإعداد
++                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}ابدأ تجهيز نطاق الفحص
+               </button>
+             </div>
+           )}
+ 
+           {prep.data && prep.data.status !== "FAILED" && (run.status === "PREPARING" || run.status === "DRAFT") && (
+             <div className="mt-3 rounded-lg border p-3 text-sm">
+-              <p>الإعداد (جيل {prep.data.generationNo}): <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
+-              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />يجري الإعداد في الخلفية…</p>}
++              <p>تجهيز نطاق الفحص (جيل {prep.data.generationNo}): <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
++              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />يجري تجهيز نطاق الفحص في الخلفية…</p>}
+               {prep.data.status === "COMPLETE" && (
+                 <button className={`mt-2 ${btn}`} disabled={publish.isPending} onClick={() => { setErr(null); publish.mutate(prep.data!.id); }}>
+-                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}نشر (تجميد وإدراج للتنفيذ)
++                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}اعتماد وإرسال للتنفيذ
+                 </button>
+               )}
+             </div>
+@@ -174,8 +178,12 @@ export function RunsView() {
+               </div>
+               {run.status === "COMPLETED" && (
+                 <div>
+-                  <p className="mb-1 text-sm font-medium">النتائج ({results.data?.length ?? 0})</p>
+-                  {results.data?.length ? <ul className="max-h-64 overflow-auto text-sm">{results.data.map((r) => <li key={r.id}>{r.resultCode} — {r.severity}</li>)}</ul> : <p className="text-xs text-[rgb(var(--muted))]">لا نتائج.</p>}
++                  <p className="mb-1 text-sm font-medium">المؤشّرات ({results.data?.length ?? 0})</p>
++                  {results.data?.length ? <ul className="max-h-64 overflow-auto text-sm">{results.data.map((r) => <li key={r.id}>{r.resultCode} — {r.severity}</li>)}</ul> : (
++                    <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
++                      لم تُنتج هذه العملية أي مؤشّرات. تحقّق من أن البيانات المستوردة تحتوي سجلات صالحة (غير مرفوضة) وأن الاختبار المختار يناسب نوعها.
++                    </p>
++                  )}
+                 </div>
+               )}
+             </div>
+diff --git a/src/lib/g4/app/run-access.ts b/src/lib/g4/app/run-access.ts
+index d53473f..66e9d7f 100644
+--- a/src/lib/g4/app/run-access.ts
++++ b/src/lib/g4/app/run-access.ts
+@@ -1,8 +1,10 @@
++import { createHash } from "node:crypto";
+ import type { TenantTx } from "@/lib/db/tenant";
+ import { withTenantContext } from "@/lib/db/tenant";
+ import { createDraftRun } from "@/lib/g4/run";
+ import { beginPreparation, sealPreparation, type TestSelection } from "@/lib/g4/preparation";
+ import { publishRun } from "@/lib/g4/publish";
++import { parseRoundConfig, parseDuplicateConfig, gcd } from "@/lib/g4/execution/statistical/config";
+ 
+ /**
+  * G6 Phase B — authenticated AuditRun application boundary.
+@@ -250,6 +252,76 @@ export async function getRunResults(actor: RunActor, runId: string, take = 500):
+   });
+ }
+ 
++// ── #6 Audit-result (مؤشّر) detail: result + evidence traced to source rows ──
++
++export interface ResultEvidenceRecord {
++  evidenceType: string;
++  datasetId: string | null;
++  sourceRowNo: number | null;
++  role: string | null;
++  importedRecordId: string | null;
++  /** Source row as imported (header/value pairs, in column order); null if not an imported record. */
++  cells: { h: string; v: string | null }[] | null;
++}
++export interface ResultDetail {
++  id: string;
++  runId: string;
++  resultKind: string;
++  resultCode: string;
++  severity: string;
++  score: string;
++  resultSemanticFingerprint: string;
++  dispositionState: string;
++  evidence: ResultEvidenceRecord[];
++}
++
++/** Positional raw cells [{i,h,v}] → header/value pairs in column order. */
++function normalizeCells(raw: unknown): { h: string; v: string | null }[] | null {
++  if (!Array.isArray(raw)) return null;
++  return (raw as { i?: number; h?: string; v?: string | null }[])
++    .slice()
++    .sort((a, b) => (a.i ?? 0) - (b.i ?? 0))
++    .map((c) => ({ h: String(c.h ?? ""), v: c.v == null ? null : String(c.v) }));
++}
++
++/**
++ * Full detail for one audit result (مؤشّر) the actor may see: the result core,
++ * its current disposition state, and every evidence row traced back to the
++ * imported source record (so the auditor sees WHAT the indicator refers to).
++ * Single transaction: resolve result → its run → engagement membership → read.
++ */
++export async function getAuditResultDetail(actor: RunActor, resultId: string): Promise<ResultDetail> {
++  return withTenantContext(actor.auditFirmId, async (tx) => {
++    const r = await tx.auditResult.findUnique({
++      where: { id: resultId },
++      select: { id: true, runId: true, resultKind: true, resultCode: true, severity: true, score: true, resultSemanticFingerprint: true },
++    });
++    if (!r) throw new RunAccessError("NOT_FOUND", "result not found");
++    await authorizeRun(tx, actor, r.runId); // engagement membership via the result's run
++    const disp = await tx.auditResultDispositionState.findFirst({ where: { auditResultId: r.id }, select: { currentState: true } });
++    const ev = await tx.auditResultEvidence.findMany({
++      where: { auditResultId: r.id },
++      orderBy: [{ datasetId: "asc" }, { sourceRowNo: "asc" }], take: 200,
++      select: { evidenceType: true, datasetId: true, sourceRowNo: true, role: true, importedRecordId: true },
++    });
++    const recIds = ev.map((e) => e.importedRecordId).filter((x): x is string => !!x);
++    const recs = recIds.length
++      ? await tx.importedRecord.findMany({ where: { id: { in: recIds } }, select: { id: true, rawCells: true } })
++      : [];
++    const recMap = new Map(recs.map((x) => [x.id, x.rawCells]));
++    return {
++      id: r.id, runId: r.runId, resultKind: r.resultKind, resultCode: r.resultCode,
++      severity: String(r.severity), score: r.score.toString(), resultSemanticFingerprint: r.resultSemanticFingerprint,
++      dispositionState: disp?.currentState ? String(disp.currentState) : "UNREVIEWED",
++      evidence: ev.map((e) => ({
++        evidenceType: String(e.evidenceType), datasetId: e.datasetId, sourceRowNo: e.sourceRowNo,
++        role: e.role ?? null, importedRecordId: e.importedRecordId,
++        cells: e.importedRecordId ? normalizeCells(recMap.get(e.importedRecordId)) : null,
++      })),
++    };
++  });
++}
++
+ export interface DatasetOption { id: string; kind: string; status: string; datasetHash: string | null; createdAt: string }
+ export interface TestOption { key: string; name: string; nameAr: string; testType: string }
+ export interface PreparationSummary { id: string; generationNo: number; status: string; failureCode: string | null; sealedAt: string | null }
+@@ -287,6 +359,113 @@ export async function listAuditTests(actor: RunActor): Promise<TestOption[]> {
+   });
+ }
+ 
++// ── #7 Audit-test authoring (config-free executors only) ──
++//
++// The curated set of test executors that need NO run-time parameters, so a test
++// created from the UI is always executable (statistical executors require frozen
++// thresholds and are intentionally excluded from self-service authoring for now).
++// Value = dataset kinds the executor supports (and the choices offered for
++// requiredDatasetKinds). Keys are "<testType>:<kind>" (the registry key).
++export const CREATABLE_TEST_KINDS: Record<string, { testType: string; kind: string; datasetKinds: string[]; params?: "round" | "dupamt" }> = {
++  "DATA_QUALITY:POPULATION_MEMBER": { testType: "DATA_QUALITY", kind: "POPULATION_MEMBER", datasetKinds: ["GENERAL_LEDGER", "TRIAL_BALANCE", "BANK", "OTHER"] },
++  "DATA_QUALITY:SOURCE_TO_CANONICAL_MISMATCH": { testType: "DATA_QUALITY", kind: "SOURCE_TO_CANONICAL_MISMATCH", datasetKinds: ["GENERAL_LEDGER", "TRIAL_BALANCE", "BANK", "OTHER"] },
++  "ACCOUNTING_INTEGRITY:UNBALANCED_JE": { testType: "ACCOUNTING_INTEGRITY", kind: "UNBALANCED_JE", datasetKinds: ["GENERAL_LEDGER"] },
++  "ACCOUNTING_INTEGRITY:INVALID_DEBIT_CREDIT": { testType: "ACCOUNTING_INTEGRITY", kind: "INVALID_DEBIT_CREDIT", datasetKinds: ["GENERAL_LEDGER"] },
++  "ACCOUNTING_INTEGRITY:TB_ACCOUNT_DUPLICATION": { testType: "ACCOUNTING_INTEGRITY", kind: "TB_ACCOUNT_DUPLICATION", datasetKinds: ["TRIAL_BALANCE"] },
++  // Statistical executors carry FROZEN parameters stored on the version and
++  // injected into the run at preparation (see enrichSelections). Params are
++  // validated with the engine's own parsers at authoring time.
++  "STATISTICAL:ROUND_NUMBER_FREQUENCY": { testType: "STATISTICAL", kind: "ROUND_NUMBER_FREQUENCY", datasetKinds: ["GENERAL_LEDGER"], params: "round" },
++  "STATISTICAL:DUPLICATE_AMOUNT_FREQUENCY": { testType: "STATISTICAL", kind: "DUPLICATE_AMOUNT_FREQUENCY", datasetKinds: ["GENERAL_LEDGER"], params: "dupamt" },
++};
++
++const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
++
++/** Assemble + validate the frozen statistical parameters from user-entered fields. */
++function buildStatParams(kind: "round" | "dupamt", raw: Record<string, unknown>): Record<string, unknown> {
++  const int = (v: unknown) => (typeof v === "number" ? v : Number.parseInt(String(v ?? ""), 10));
++  try {
++    if (kind === "round") {
++      let num = int(raw.rateThresholdNum);
++      let denom = int(raw.rateThresholdDenom);
++      if (Number.isInteger(num) && Number.isInteger(denom) && denom > 0) {
++        const g = gcd(num, denom) || 1; // reduce to lowest terms (parser requires gcd===1)
++        num = num / g; denom = denom / g;
++      }
++      const params = {
++        amountBasis: "TRANSACTION", methodVersion: "st.round.1",
++        roundingQuantum: String(raw.roundingQuantum ?? ""),
++        minimumPopulation: int(raw.minimumPopulation),
++        minimumRoundCount: int(raw.minimumRoundCount),
++        rateThresholdNum: num, rateThresholdDenom: denom,
++      };
++      parseRoundConfig(params); // throws ConfigError on invalid
++      return params;
++    }
++    const params = { amountBasis: "TRANSACTION", methodVersion: "st.dupamt.1", minimumOccurrenceCount: int(raw.minimumOccurrenceCount) };
++    parseDuplicateConfig(params);
++    return params;
++  } catch (e) {
++    throw new RunValidationError(`إعدادات الاختبار الإحصائي غير صالحة: ${e instanceof Error ? e.message : "قيم غير صحيحة"}`);
++  }
++}
++
++export interface CreateAuditTestInput {
++  key: string;
++  name: string;
++  nameAr: string;
++  testType: string;
++  kind: string;
++  requiredDatasetKinds: string[];
++  requiresAccountMapping?: boolean;
++  /** Statistical executors only: user-entered parameter fields. */
++  params?: Record<string, unknown>;
++}
++
++/**
++ * Create a firm audit test with an ACTIVE version 1 (self-service authoring).
++ * Firm-scoped (RLS); no engagement membership (tests are firm-level library
++ * items). Config-free executors need no parameters; statistical executors carry
++ * validated frozen parameters on the version. Input errors → RunValidationError.
++ */
++export async function createAuditTest(actor: RunActor, input: CreateAuditTestInput): Promise<{ testKey: string }> {
++  const key = (input.key ?? "").trim();
++  if (!KEY_RE.test(key)) throw new RunValidationError("مفتاح الاختبار غير صالح (أحرف/أرقام/‏- ‏_ فقط، 2–64 خانة)");
++  const spec = CREATABLE_TEST_KINDS[`${input.testType}:${input.kind}`];
++  if (!spec) throw new RunValidationError("نوع اختبار غير مدعوم للإنشاء الذاتي");
++  const requiredDatasetKinds = [...new Set((input.requiredDatasetKinds ?? []).filter((k) => spec.datasetKinds.includes(k)))];
++  if (requiredDatasetKinds.length === 0) throw new RunValidationError("اختر نوع بيانات واحدًا على الأقل يناسب الاختبار");
++  const nameAr = (input.nameAr ?? "").trim();
++  const name = (input.name ?? "").trim() || nameAr || key;
++  if (!nameAr && !(input.name ?? "").trim()) throw new RunValidationError("اسم الاختبار مطلوب");
++  const statParams = spec.params ? buildStatParams(spec.params, input.params ?? {}) : null;
++  const definition = statParams ? { kind: spec.kind, params: statParams } : { kind: spec.kind };
++  const requirements = { requiredDatasetKinds, ...(input.requiresAccountMapping ? { requiresAccountMapping: true } : {}) };
++  const versionHash = createHash("sha256")
++    .update(JSON.stringify({ f: actor.auditFirmId, key, v: 1, tt: spec.testType, def: definition, req: requirements }))
++    .digest("hex");
++
++  return withTenantContext(actor.auditFirmId, async (tx) => {
++    const existing = await tx.auditTest.findUnique({
++      where: { auditFirmId_key: { auditFirmId: actor.auditFirmId, key } }, select: { id: true },
++    });
++    if (existing) throw new RunValidationError("يوجد اختبار بنفس المفتاح");
++    const test = await tx.auditTest.create({
++      data: { auditFirmId: actor.auditFirmId, key, name, nameAr: nameAr || name, testType: spec.testType as never },
++      select: { id: true },
++    });
++    const tv = await tx.auditTestVersion.create({
++      data: {
++        auditFirmId: actor.auditFirmId, auditTestId: test.id, version: 1, testType: spec.testType as never,
++        definitionJson: definition as object, requirementsJson: requirements as object, versionHash, status: "ACTIVE",
++      },
++      select: { id: true },
++    });
++    await tx.auditTest.update({ where: { id: test.id }, data: { currentVersionId: tv.id } });
++    return { testKey: key };
++  });
++}
++
+ /** Latest preparation generation for a run the actor belongs to (status polling). */
+ export async function getLatestPreparation(actor: RunActor, runId: string): Promise<PreparationSummary | null> {
+   return withTenantContext(actor.auditFirmId, async (tx) => {
+@@ -365,10 +544,32 @@ async function assertPreparableConfig(tx: TenantTx, engagementId: string, tests:
+   }
+ }
+ 
++/**
++ * Enrich each test selection with the FROZEN parameters stored on its active
++ * version's definitionJson (`params`). This is how statistical tests carry their
++ * reproducible config into a run even though the UI selects tests by key only.
++ * A caller-supplied `parameters` (if any) wins; config-free tests are unchanged.
++ */
++async function enrichSelections(tx: TenantTx, tests: TestSelection[]): Promise<TestSelection[]> {
++  const out: TestSelection[] = [];
++  for (const sel of tests) {
++    if (sel.parameters && Object.keys(sel.parameters).length > 0) { out.push(sel); continue; }
++    const t = await tx.auditTest.findFirst({ where: { key: sel.testKey }, select: { currentVersionId: true } });
++    const v = t?.currentVersionId
++      ? await tx.auditTestVersion.findUnique({ where: { id: t.currentVersionId }, select: { definitionJson: true } })
++      : null;
++    const def = (v?.definitionJson ?? {}) as { params?: Record<string, unknown> };
++    out.push(def.params && typeof def.params === "object" && Object.keys(def.params).length > 0
++      ? { testKey: sel.testKey, parameters: def.params }
++      : sel);
++  }
++  return out;
++}
++
+ export async function beginRunPreparation(
+   actor: RunActor, runId: string, input: BeginPreparationInput,
+ ): Promise<{ prepId: string; generationNo: number }> {
+-  await withTenantContext(actor.auditFirmId, async (tx) => {
++  const enrichedTests = await withTenantContext(actor.auditFirmId, async (tx) => {
+     const run = await authorizeRun(tx, actor, runId);
+     if (!PREPARABLE_RUN_STATES.includes(run.status)) {
+       throw new RunStateError("INVALID_RUN_STATE", `run is not preparable in status ${run.status}`);
+@@ -383,9 +584,13 @@ export async function beginRunPreparation(
+       throw new RunStateError("PREPARATION_ALREADY_ACTIVE", "an active preparation generation already exists for this run");
+     }
+     await assertPreparableConfig(tx, run.engagementId, input.tests, input.datasetIds);
++    // Inject each test version's frozen parameters (statistical tests) so the run
++    // freezes a complete, reproducible config even though the UI selects tests by
++    // key only. Config-free tests pass through unchanged.
++    return enrichSelections(tx, input.tests);
+   });
+   try {
+-    return await beginPreparation(actor.auditFirmId, { runId, tests: input.tests, datasetIds: input.datasetIds, batchSize: input.batchSize });
++    return await beginPreparation(actor.auditFirmId, { runId, tests: enrichedTests, datasetIds: input.datasetIds, batchSize: input.batchSize });
+   } catch (e) {
+     // Concurrent-race authority: two callers can both pass the pre-check; the DB
+     // then rejects the losing INSERT on a per-run preparation uniqueness (the new
+diff --git a/src/lib/labels.ts b/src/lib/labels.ts
+index 2698b8a..92416e4 100644
+--- a/src/lib/labels.ts
++++ b/src/lib/labels.ts
+@@ -137,8 +137,8 @@ export const SEVERITY_BAR: Record<AnomalySeverity, string> = {
+ export const EXCEPTION_STATUS_LABELS_AR: Record<ExceptionStatus, string> = {
+   OPEN: "مفتوحة",
+   UNDER_INVESTIGATION: "قيد الفحص",
+-  CONCLUDED_WITH_FINDING: "منتهية بنتيجة",
+-  CLOSED_NO_FINDING: "مغلقة بلا نتيجة",
++  CONCLUDED_WITH_FINDING: "منتهية بنتيجة تدقيق",
++  CLOSED_NO_FINDING: "مغلقة دون نتيجة تدقيق",
+ };
+ 
+ export const EXCEPTION_STATUS_BADGE: Record<ExceptionStatus, string> = {
+@@ -184,7 +184,7 @@ export const DISPOSITION_STATE_LABELS_AR: Record<DispositionStateKind, string> =
+   UNDER_REVIEW: "قيد المراجعة",
+   DISPOSED: "تم البتّ فيها",
+   INVESTIGATING: "قيد الفحص",
+-  LINKED: "مرتبطة بمسألة",
++  LINKED: "مرتبطة بمسألة تدقيق",
+ };
+ 
+ export const DISPOSITION_STATE_BADGE: Record<DispositionStateKind, string> = {

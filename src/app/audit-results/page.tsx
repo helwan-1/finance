@@ -6,10 +6,10 @@ export default function AuditResultsPage() {
     <DashboardShell>
       <div className="mx-auto max-w-6xl space-y-5">
         <div>
-          <h1 className="text-xl font-bold">نتائج التدقيق</h1>
+          <h1 className="text-xl font-bold">مؤشّرات التدقيق</h1>
           <p className="text-sm text-[rgb(var(--muted))]">
-            نتائج محرّك التدقيق (G4) مع حالتها المهنية — سجّل حكمًا على أي نتيجة أو
-            حوّلها إلى استثناء (مسألة) مباشرةً.
+            مؤشّرات محرّك التدقيق (G4) مع حالتها المهنية — سجّل حكمًا على أي مؤشّر أو
+            حوّله إلى مسألة تدقيق مباشرةً.
           </p>
         </div>
         <AuditResultsView />

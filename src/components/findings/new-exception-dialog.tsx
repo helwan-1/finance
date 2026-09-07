@@ -17,7 +17,7 @@ const secondaryBtn = "rounded-lg border px-4 py-2 text-sm";
 
 async function fetchResults(engagementId: string): Promise<AuditResultsResponse> {
   const res = await fetch(`/api/audit-results?engagementId=${encodeURIComponent(engagementId)}`);
-  if (!res.ok) throw new Error("فشل تحميل نتائج التدقيق");
+  if (!res.ok) throw new Error("فشل تحميل مؤشّرات التدقيق");
   return (await res.json()) as AuditResultsResponse;
 }
 
@@ -65,7 +65,7 @@ export function NewExceptionDialog({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "فشل إنشاء الاستثناء");
+        throw new Error(body.error || "فشل فتح مسألة التدقيق");
       }
     },
     onSuccess: async () => {
@@ -73,7 +73,7 @@ export function NewExceptionDialog({
       await queryClient.invalidateQueries({ queryKey: ["audit-results"] });
       onClose();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "فشل إنشاء الاستثناء"),
+    onError: (e) => setError(e instanceof Error ? e.message : "فشل فتح مسألة التدقيق"),
   });
 
   const canSubmit = Boolean(firstResultId) && Boolean(title || titleAr) && !mutation.isPending;
@@ -93,24 +93,29 @@ export function NewExceptionDialog({
         className="surface max-h-[85vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border p-5 shadow-card"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">استثناء جديد</h2>
+          <h2 className="text-lg font-bold">فتح مسألة تدقيق</h2>
           <button type="button" onClick={onClose} aria-label="إغلاق">
             <X className="h-5 w-5 text-[rgb(var(--muted))]" />
           </button>
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">نتيجة التدقيق المصدر</label>
+          <label className="text-sm font-medium">المؤشّر المصدر</label>
+          {!presetResultId && (
+            <p className="text-xs text-[rgb(var(--muted))]">
+              كل مسألة تدقيق تبدأ من مؤشّر. يمكنك أيضًا فتح المسألة مباشرةً من شاشة «مؤشّرات التدقيق» على المؤشّر المحدّد.
+            </p>
+          )}
           {presetResultId ? (
             <p className="rounded-lg border p-3 text-sm font-mono">
               {presetResultLabel ?? presetResultId}
             </p>
           ) : isPending ? (
-            <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل النتائج…</p>
+            <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل المؤشّرات…</p>
           ) : results.length === 0 ? (
             <p className="rounded-lg border p-3 text-sm text-[rgb(var(--muted))]">
-              لا توجد نتائج تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4)
-              لإنتاج نتائج يمكن إنشاء استثناء منها.
+              لا توجد مؤشّرات تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4)
+              لإنتاج مؤشّرات يمكن فتح مسألة تدقيق منها.
             </p>
           ) : (
             <select
@@ -119,7 +124,7 @@ export function NewExceptionDialog({
               onChange={(e) => setFirstResultId(e.target.value)}
               required
             >
-              <option value="">— اختر نتيجة —</option>
+              <option value="">— اختر مؤشّرًا —</option>
               {results.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.resultCode} · {SEVERITY_LABELS_AR[r.severity]} · {r.dispositionState}

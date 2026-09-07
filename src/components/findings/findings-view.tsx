@@ -39,7 +39,7 @@ async function fetchExceptions(
   const qs = new URLSearchParams({ engagementId });
   if (status !== "ALL") qs.set("status", status);
   const res = await fetch(`/api/findings?${qs.toString()}`);
-  if (!res.ok) throw new Error("فشل تحميل المسائل");
+  if (!res.ok) throw new Error("فشل تحميل مسائل التدقيق");
   return (await res.json()) as ExceptionsResponse;
 }
 
@@ -81,18 +81,18 @@ export function FindingsView() {
           disabled={!engagementId}
         >
           <Plus className="h-4 w-4" />
-          استثناء جديد
+          فتح مسألة تدقيق
         </button>
       </div>
 
       {!engagementId ? (
-        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض المسائل." />
+        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض مسائل التدقيق." />
       ) : isPending ? (
         <EmptyCard text="جارٍ التحميل…" />
       ) : isError ? (
         <EmptyCard text="تعذّر تحميل البيانات. حاول مرة أخرى." tone="error" />
       ) : exceptions.length === 0 ? (
-        <EmptyCard text="لا توجد مسائل بعد. ابدأ بإنشاء استثناء من نتيجة تدقيق." />
+        <EmptyCard text="لا توجد مسائل تدقيق بعد. ابدأ بفتح مسألة من مؤشّر تدقيق." />
       ) : (
         <div className="space-y-3">
           {exceptions.map((ex) => (
@@ -143,7 +143,7 @@ function ExceptionRow({
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{ex.titleAr || ex.title}</p>
           <p className="text-xs text-[rgb(var(--muted))]">
-            {ex.linkedResultCount} نتيجة مرتبطة · {ex.findingCount} نتيجة تدقيق
+            {ex.linkedResultCount} مؤشّر مرتبط · {ex.findingCount} نتيجة تدقيق
           </p>
         </div>
         <span

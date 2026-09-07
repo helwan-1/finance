@@ -137,8 +137,8 @@ export const SEVERITY_BAR: Record<AnomalySeverity, string> = {
 export const EXCEPTION_STATUS_LABELS_AR: Record<ExceptionStatus, string> = {
   OPEN: "مفتوحة",
   UNDER_INVESTIGATION: "قيد الفحص",
-  CONCLUDED_WITH_FINDING: "منتهية بنتيجة",
-  CLOSED_NO_FINDING: "مغلقة بلا نتيجة",
+  CONCLUDED_WITH_FINDING: "منتهية بنتيجة تدقيق",
+  CLOSED_NO_FINDING: "مغلقة دون نتيجة تدقيق",
 };
 
 export const EXCEPTION_STATUS_BADGE: Record<ExceptionStatus, string> = {
@@ -184,7 +184,7 @@ export const DISPOSITION_STATE_LABELS_AR: Record<DispositionStateKind, string> =
   UNDER_REVIEW: "قيد المراجعة",
   DISPOSED: "تم البتّ فيها",
   INVESTIGATING: "قيد الفحص",
-  LINKED: "مرتبطة بمسألة",
+  LINKED: "مرتبطة بمسألة تدقيق",
 };
 
 export const DISPOSITION_STATE_BADGE: Record<DispositionStateKind, string> = {

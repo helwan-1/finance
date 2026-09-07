@@ -41,6 +41,10 @@ export function RunsView() {
     queryKey: ["runs", engagementId],
     queryFn: () => jget<{ runs: RunSummary[] }>(`/api/runs?engagementId=${engagementId}`).then((d) => d.runs),
     enabled: Boolean(engagementId),
+    // Auto-refresh while any run is still working, so QUEUED/RUNNING flips to
+    // COMPLETED in the list without a manual refresh.
+    refetchInterval: (q) =>
+      (q.state.data as RunSummary[] | undefined)?.some((r) => ["PREPARING", "QUEUED", "RUNNING"].includes(r.status)) ? 3000 : false,
   });
   const datasets = useQuery({
     queryKey: ["datasets", engagementId],
@@ -102,7 +106,7 @@ export function RunsView() {
           <div className="flex gap-2">
             <button className={ghost} onClick={() => void runs.refetch()}><RefreshCw className="h-4 w-4" />تحديث</button>
             <button className={btn} disabled={createRun.isPending} onClick={() => { setErr(null); createRun.mutate(); }}>
-              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}إنشاء تدقيق
+              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}إنشاء عملية تدقيق
             </button>
           </div>
         </div>
@@ -124,19 +128,19 @@ export function RunsView() {
 
       {run && (
         <div className={card}>
-          <h3 className="mb-2 font-semibold">تفاصيل التدقيق — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
+          <h3 className="mb-2 font-semibold">تفاصيل عملية التدقيق — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
           <p className="mb-3 text-sm">الحالة: <span className="rounded-full border px-2 py-0.5 text-xs">{run.status}</span></p>
 
           {(run.status === "DRAFT" || run.status === "PREPARING") && (!prep.data || prep.data.status === "FAILED") && (
             <div className="space-y-3">
               <div>
-                <p className="mb-1 text-sm font-medium">مجموعات البيانات</p>
+                <p className="mb-1 text-sm font-medium">البيانات المستوردة</p>
                 {datasets.data?.length ? datasets.data.map((d) => (
                   <label key={d.id} className="flex items-center gap-2 py-1 text-sm">
                     <input type="checkbox" checked={pickedDatasets.has(d.id)} onChange={() => toggle(pickedDatasets, d.id, setPickedDatasets)} />
                     <span>{d.kind} — {d.id.slice(0, 10)} <span className="text-[rgb(var(--muted))]">({d.status})</span></span>
                   </label>
-                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد مجموعات بيانات. استورد ملفاً أولاً.</p>}
+                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد بيانات مستوردة. استورد ملفاً أولاً.</p>}
               </div>
               <div>
                 <p className="mb-1 text-sm font-medium">اختبارات التدقيق</p>
@@ -147,20 +151,20 @@ export function RunsView() {
                   </label>
                 )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد اختبارات مُفعّلة.</p>}
               </div>
-              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل الإعداد ({prep.data.failureCode}). عدّل الاختيار وابدأ جيلاً جديداً.</p>}
+              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل تجهيز نطاق الفحص ({prep.data.failureCode}). عدّل الاختيار وابدأ من جديد.</p>}
               <button className={btn} disabled={!canBegin || beginPrep.isPending} onClick={() => { setErr(null); beginPrep.mutate(); }}>
-                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}ابدأ الإعداد
+                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}ابدأ تجهيز نطاق الفحص
               </button>
             </div>
           )}
 
           {prep.data && prep.data.status !== "FAILED" && (run.status === "PREPARING" || run.status === "DRAFT") && (
             <div className="mt-3 rounded-lg border p-3 text-sm">
-              <p>الإعداد (جيل {prep.data.generationNo}): <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
-              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />يجري الإعداد في الخلفية…</p>}
+              <p>تجهيز نطاق الفحص (جيل {prep.data.generationNo}): <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
+              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />يجري تجهيز نطاق الفحص في الخلفية…</p>}
               {prep.data.status === "COMPLETE" && (
                 <button className={`mt-2 ${btn}`} disabled={publish.isPending} onClick={() => { setErr(null); publish.mutate(prep.data!.id); }}>
-                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}نشر (تجميد وإدراج للتنفيذ)
+                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}اعتماد وإرسال للتنفيذ
                 </button>
               )}
             </div>
@@ -174,8 +178,12 @@ export function RunsView() {
               </div>
               {run.status === "COMPLETED" && (
                 <div>
-                  <p className="mb-1 text-sm font-medium">النتائج ({results.data?.length ?? 0})</p>
-                  {results.data?.length ? <ul className="max-h-64 overflow-auto text-sm">{results.data.map((r) => <li key={r.id}>{r.resultCode} — {r.severity}</li>)}</ul> : <p className="text-xs text-[rgb(var(--muted))]">لا نتائج.</p>}
+                  <p className="mb-1 text-sm font-medium">المؤشّرات ({results.data?.length ?? 0})</p>
+                  {results.data?.length ? <ul className="max-h-64 overflow-auto text-sm">{results.data.map((r) => <li key={r.id}>{r.resultCode} — {r.severity}</li>)}</ul> : (
+                    <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                      لم تُنتج هذه العملية أي مؤشّرات. تحقّق من أن البيانات المستوردة تحتوي سجلات صالحة (غير مرفوضة) وأن الاختبار المختار يناسب نوعها.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

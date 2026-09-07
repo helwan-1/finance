@@ -108,7 +108,7 @@ export function FindingFormDialog({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "فشل حفظ النتيجة");
+        throw new Error(body.error || "فشل حفظ نتيجة التدقيق");
       }
     },
     onSuccess: async () => {
@@ -116,7 +116,7 @@ export function FindingFormDialog({
       await queryClient.invalidateQueries({ queryKey: ["exceptions"] });
       onClose();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "فشل حفظ النتيجة"),
+    onError: (e) => setError(e instanceof Error ? e.message : "فشل حفظ نتيجة التدقيق"),
   });
 
   const canSubmit =
@@ -144,7 +144,7 @@ export function FindingFormDialog({
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold">
-            {mode === "create" ? "نتيجة تدقيق جديدة" : "تعديل النتيجة (نسخة جديدة)"}
+            {mode === "create" ? "نتيجة تدقيق جديدة" : "تعديل نتيجة التدقيق (نسخة جديدة)"}
           </h2>
           <button type="button" onClick={onClose} aria-label="إغلاق">
             <X className="h-5 w-5 text-[rgb(var(--muted))]" />

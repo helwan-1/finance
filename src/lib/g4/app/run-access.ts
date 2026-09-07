@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import type { TenantTx } from "@/lib/db/tenant";
 import { withTenantContext } from "@/lib/db/tenant";
 import { createDraftRun } from "@/lib/g4/run";
 import { beginPreparation, sealPreparation, type TestSelection } from "@/lib/g4/preparation";
 import { publishRun } from "@/lib/g4/publish";
+import { parseRoundConfig, parseDuplicateConfig, gcd } from "@/lib/g4/execution/statistical/config";
 
 /**
  * G6 Phase B — authenticated AuditRun application boundary.
@@ -250,6 +252,76 @@ export async function getRunResults(actor: RunActor, runId: string, take = 500):
   });
 }
 
+// ── #6 Audit-result (مؤشّر) detail: result + evidence traced to source rows ──
+
+export interface ResultEvidenceRecord {
+  evidenceType: string;
+  datasetId: string | null;
+  sourceRowNo: number | null;
+  role: string | null;
+  importedRecordId: string | null;
+  /** Source row as imported (header/value pairs, in column order); null if not an imported record. */
+  cells: { h: string; v: string | null }[] | null;
+}
+export interface ResultDetail {
+  id: string;
+  runId: string;
+  resultKind: string;
+  resultCode: string;
+  severity: string;
+  score: string;
+  resultSemanticFingerprint: string;
+  dispositionState: string;
+  evidence: ResultEvidenceRecord[];
+}
+
+/** Positional raw cells [{i,h,v}] → header/value pairs in column order. */
+function normalizeCells(raw: unknown): { h: string; v: string | null }[] | null {
+  if (!Array.isArray(raw)) return null;
+  return (raw as { i?: number; h?: string; v?: string | null }[])
+    .slice()
+    .sort((a, b) => (a.i ?? 0) - (b.i ?? 0))
+    .map((c) => ({ h: String(c.h ?? ""), v: c.v == null ? null : String(c.v) }));
+}
+
+/**
+ * Full detail for one audit result (مؤشّر) the actor may see: the result core,
+ * its current disposition state, and every evidence row traced back to the
+ * imported source record (so the auditor sees WHAT the indicator refers to).
+ * Single transaction: resolve result → its run → engagement membership → read.
+ */
+export async function getAuditResultDetail(actor: RunActor, resultId: string): Promise<ResultDetail> {
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    const r = await tx.auditResult.findUnique({
+      where: { id: resultId },
+      select: { id: true, runId: true, resultKind: true, resultCode: true, severity: true, score: true, resultSemanticFingerprint: true },
+    });
+    if (!r) throw new RunAccessError("NOT_FOUND", "result not found");
+    await authorizeRun(tx, actor, r.runId); // engagement membership via the result's run
+    const disp = await tx.auditResultDispositionState.findFirst({ where: { auditResultId: r.id }, select: { currentState: true } });
+    const ev = await tx.auditResultEvidence.findMany({
+      where: { auditResultId: r.id },
+      orderBy: [{ datasetId: "asc" }, { sourceRowNo: "asc" }], take: 200,
+      select: { evidenceType: true, datasetId: true, sourceRowNo: true, role: true, importedRecordId: true },
+    });
+    const recIds = ev.map((e) => e.importedRecordId).filter((x): x is string => !!x);
+    const recs = recIds.length
+      ? await tx.importedRecord.findMany({ where: { id: { in: recIds } }, select: { id: true, rawCells: true } })
+      : [];
+    const recMap = new Map(recs.map((x) => [x.id, x.rawCells]));
+    return {
+      id: r.id, runId: r.runId, resultKind: r.resultKind, resultCode: r.resultCode,
+      severity: String(r.severity), score: r.score.toString(), resultSemanticFingerprint: r.resultSemanticFingerprint,
+      dispositionState: disp?.currentState ? String(disp.currentState) : "UNREVIEWED",
+      evidence: ev.map((e) => ({
+        evidenceType: String(e.evidenceType), datasetId: e.datasetId, sourceRowNo: e.sourceRowNo,
+        role: e.role ?? null, importedRecordId: e.importedRecordId,
+        cells: e.importedRecordId ? normalizeCells(recMap.get(e.importedRecordId)) : null,
+      })),
+    };
+  });
+}
+
 export interface DatasetOption { id: string; kind: string; status: string; datasetHash: string | null; createdAt: string }
 export interface TestOption { key: string; name: string; nameAr: string; testType: string }
 export interface PreparationSummary { id: string; generationNo: number; status: string; failureCode: string | null; sealedAt: string | null }
@@ -284,6 +356,113 @@ export async function listAuditTests(actor: RunActor): Promise<TestOption[]> {
     return tests
       .filter((t) => t.currentVersionId && activeIds.has(t.currentVersionId))
       .map((t) => ({ key: t.key, name: t.name, nameAr: t.nameAr, testType: String(t.testType) }));
+  });
+}
+
+// ── #7 Audit-test authoring (config-free executors only) ──
+//
+// The curated set of test executors that need NO run-time parameters, so a test
+// created from the UI is always executable (statistical executors require frozen
+// thresholds and are intentionally excluded from self-service authoring for now).
+// Value = dataset kinds the executor supports (and the choices offered for
+// requiredDatasetKinds). Keys are "<testType>:<kind>" (the registry key).
+export const CREATABLE_TEST_KINDS: Record<string, { testType: string; kind: string; datasetKinds: string[]; params?: "round" | "dupamt" }> = {
+  "DATA_QUALITY:POPULATION_MEMBER": { testType: "DATA_QUALITY", kind: "POPULATION_MEMBER", datasetKinds: ["GENERAL_LEDGER", "TRIAL_BALANCE", "BANK", "OTHER"] },
+  "DATA_QUALITY:SOURCE_TO_CANONICAL_MISMATCH": { testType: "DATA_QUALITY", kind: "SOURCE_TO_CANONICAL_MISMATCH", datasetKinds: ["GENERAL_LEDGER", "TRIAL_BALANCE", "BANK", "OTHER"] },
+  "ACCOUNTING_INTEGRITY:UNBALANCED_JE": { testType: "ACCOUNTING_INTEGRITY", kind: "UNBALANCED_JE", datasetKinds: ["GENERAL_LEDGER"] },
+  "ACCOUNTING_INTEGRITY:INVALID_DEBIT_CREDIT": { testType: "ACCOUNTING_INTEGRITY", kind: "INVALID_DEBIT_CREDIT", datasetKinds: ["GENERAL_LEDGER"] },
+  "ACCOUNTING_INTEGRITY:TB_ACCOUNT_DUPLICATION": { testType: "ACCOUNTING_INTEGRITY", kind: "TB_ACCOUNT_DUPLICATION", datasetKinds: ["TRIAL_BALANCE"] },
+  // Statistical executors carry FROZEN parameters stored on the version and
+  // injected into the run at preparation (see enrichSelections). Params are
+  // validated with the engine's own parsers at authoring time.
+  "STATISTICAL:ROUND_NUMBER_FREQUENCY": { testType: "STATISTICAL", kind: "ROUND_NUMBER_FREQUENCY", datasetKinds: ["GENERAL_LEDGER"], params: "round" },
+  "STATISTICAL:DUPLICATE_AMOUNT_FREQUENCY": { testType: "STATISTICAL", kind: "DUPLICATE_AMOUNT_FREQUENCY", datasetKinds: ["GENERAL_LEDGER"], params: "dupamt" },
+};
+
+const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
+
+/** Assemble + validate the frozen statistical parameters from user-entered fields. */
+function buildStatParams(kind: "round" | "dupamt", raw: Record<string, unknown>): Record<string, unknown> {
+  const int = (v: unknown) => (typeof v === "number" ? v : Number.parseInt(String(v ?? ""), 10));
+  try {
+    if (kind === "round") {
+      let num = int(raw.rateThresholdNum);
+      let denom = int(raw.rateThresholdDenom);
+      if (Number.isInteger(num) && Number.isInteger(denom) && denom > 0) {
+        const g = gcd(num, denom) || 1; // reduce to lowest terms (parser requires gcd===1)
+        num = num / g; denom = denom / g;
+      }
+      const params = {
+        amountBasis: "TRANSACTION", methodVersion: "st.round.1",
+        roundingQuantum: String(raw.roundingQuantum ?? ""),
+        minimumPopulation: int(raw.minimumPopulation),
+        minimumRoundCount: int(raw.minimumRoundCount),
+        rateThresholdNum: num, rateThresholdDenom: denom,
+      };
+      parseRoundConfig(params); // throws ConfigError on invalid
+      return params;
+    }
+    const params = { amountBasis: "TRANSACTION", methodVersion: "st.dupamt.1", minimumOccurrenceCount: int(raw.minimumOccurrenceCount) };
+    parseDuplicateConfig(params);
+    return params;
+  } catch (e) {
+    throw new RunValidationError(`إعدادات الاختبار الإحصائي غير صالحة: ${e instanceof Error ? e.message : "قيم غير صحيحة"}`);
+  }
+}
+
+export interface CreateAuditTestInput {
+  key: string;
+  name: string;
+  nameAr: string;
+  testType: string;
+  kind: string;
+  requiredDatasetKinds: string[];
+  requiresAccountMapping?: boolean;
+  /** Statistical executors only: user-entered parameter fields. */
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Create a firm audit test with an ACTIVE version 1 (self-service authoring).
+ * Firm-scoped (RLS); no engagement membership (tests are firm-level library
+ * items). Config-free executors need no parameters; statistical executors carry
+ * validated frozen parameters on the version. Input errors → RunValidationError.
+ */
+export async function createAuditTest(actor: RunActor, input: CreateAuditTestInput): Promise<{ testKey: string }> {
+  const key = (input.key ?? "").trim();
+  if (!KEY_RE.test(key)) throw new RunValidationError("مفتاح الاختبار غير صالح (أحرف/أرقام/‏- ‏_ فقط، 2–64 خانة)");
+  const spec = CREATABLE_TEST_KINDS[`${input.testType}:${input.kind}`];
+  if (!spec) throw new RunValidationError("نوع اختبار غير مدعوم للإنشاء الذاتي");
+  const requiredDatasetKinds = [...new Set((input.requiredDatasetKinds ?? []).filter((k) => spec.datasetKinds.includes(k)))];
+  if (requiredDatasetKinds.length === 0) throw new RunValidationError("اختر نوع بيانات واحدًا على الأقل يناسب الاختبار");
+  const nameAr = (input.nameAr ?? "").trim();
+  const name = (input.name ?? "").trim() || nameAr || key;
+  if (!nameAr && !(input.name ?? "").trim()) throw new RunValidationError("اسم الاختبار مطلوب");
+  const statParams = spec.params ? buildStatParams(spec.params, input.params ?? {}) : null;
+  const definition = statParams ? { kind: spec.kind, params: statParams } : { kind: spec.kind };
+  const requirements = { requiredDatasetKinds, ...(input.requiresAccountMapping ? { requiresAccountMapping: true } : {}) };
+  const versionHash = createHash("sha256")
+    .update(JSON.stringify({ f: actor.auditFirmId, key, v: 1, tt: spec.testType, def: definition, req: requirements }))
+    .digest("hex");
+
+  return withTenantContext(actor.auditFirmId, async (tx) => {
+    const existing = await tx.auditTest.findUnique({
+      where: { auditFirmId_key: { auditFirmId: actor.auditFirmId, key } }, select: { id: true },
+    });
+    if (existing) throw new RunValidationError("يوجد اختبار بنفس المفتاح");
+    const test = await tx.auditTest.create({
+      data: { auditFirmId: actor.auditFirmId, key, name, nameAr: nameAr || name, testType: spec.testType as never },
+      select: { id: true },
+    });
+    const tv = await tx.auditTestVersion.create({
+      data: {
+        auditFirmId: actor.auditFirmId, auditTestId: test.id, version: 1, testType: spec.testType as never,
+        definitionJson: definition as object, requirementsJson: requirements as object, versionHash, status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    await tx.auditTest.update({ where: { id: test.id }, data: { currentVersionId: tv.id } });
+    return { testKey: key };
   });
 }
 
@@ -365,10 +544,32 @@ async function assertPreparableConfig(tx: TenantTx, engagementId: string, tests:
   }
 }
 
+/**
+ * Enrich each test selection with the FROZEN parameters stored on its active
+ * version's definitionJson (`params`). This is how statistical tests carry their
+ * reproducible config into a run even though the UI selects tests by key only.
+ * A caller-supplied `parameters` (if any) wins; config-free tests are unchanged.
+ */
+async function enrichSelections(tx: TenantTx, tests: TestSelection[]): Promise<TestSelection[]> {
+  const out: TestSelection[] = [];
+  for (const sel of tests) {
+    if (sel.parameters && Object.keys(sel.parameters).length > 0) { out.push(sel); continue; }
+    const t = await tx.auditTest.findFirst({ where: { key: sel.testKey }, select: { currentVersionId: true } });
+    const v = t?.currentVersionId
+      ? await tx.auditTestVersion.findUnique({ where: { id: t.currentVersionId }, select: { definitionJson: true } })
+      : null;
+    const def = (v?.definitionJson ?? {}) as { params?: Record<string, unknown> };
+    out.push(def.params && typeof def.params === "object" && Object.keys(def.params).length > 0
+      ? { testKey: sel.testKey, parameters: def.params }
+      : sel);
+  }
+  return out;
+}
+
 export async function beginRunPreparation(
   actor: RunActor, runId: string, input: BeginPreparationInput,
 ): Promise<{ prepId: string; generationNo: number }> {
-  await withTenantContext(actor.auditFirmId, async (tx) => {
+  const enrichedTests = await withTenantContext(actor.auditFirmId, async (tx) => {
     const run = await authorizeRun(tx, actor, runId);
     if (!PREPARABLE_RUN_STATES.includes(run.status)) {
       throw new RunStateError("INVALID_RUN_STATE", `run is not preparable in status ${run.status}`);
@@ -383,9 +584,13 @@ export async function beginRunPreparation(
       throw new RunStateError("PREPARATION_ALREADY_ACTIVE", "an active preparation generation already exists for this run");
     }
     await assertPreparableConfig(tx, run.engagementId, input.tests, input.datasetIds);
+    // Inject each test version's frozen parameters (statistical tests) so the run
+    // freezes a complete, reproducible config even though the UI selects tests by
+    // key only. Config-free tests pass through unchanged.
+    return enrichSelections(tx, input.tests);
   });
   try {
-    return await beginPreparation(actor.auditFirmId, { runId, tests: input.tests, datasetIds: input.datasetIds, batchSize: input.batchSize });
+    return await beginPreparation(actor.auditFirmId, { runId, tests: enrichedTests, datasetIds: input.datasetIds, batchSize: input.batchSize });
   } catch (e) {
     // Concurrent-race authority: two callers can both pass the pre-check; the DB
     // then rejects the losing INSERT on a per-run preparation uniqueness (the new

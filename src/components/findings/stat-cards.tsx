@@ -15,13 +15,13 @@ export function StatCards({ exceptions }: { exceptions: ExceptionDTO[] }) {
       tone: "text-severity-medium",
     },
     {
-      labelAr: "منتهية بنتيجة",
+      labelAr: "منتهية بنتيجة تدقيق",
       value: count("CONCLUDED_WITH_FINDING"),
       icon: FileCheck2,
       tone: "text-severity-critical",
     },
     {
-      labelAr: "مغلقة بلا نتيجة",
+      labelAr: "مغلقة دون نتيجة تدقيق",
       value: count("CLOSED_NO_FINDING"),
       icon: Archive,
       tone: "text-[rgb(var(--muted))]",

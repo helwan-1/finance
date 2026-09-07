@@ -16,6 +16,7 @@ import {
   Gavel,
   ClipboardList,
   Play,
+  FlaskConical,
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 
@@ -32,9 +33,10 @@ const NAV_ITEMS: NavItem[] = [
   { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
   { labelAr: "قواعد التدقيق", icon: Scale, href: "/rules" },
   { labelAr: "الحالات الشاذة", icon: ShieldAlert, href: "/anomalies" },
+  { labelAr: "اختبارات التدقيق", icon: FlaskConical, href: "/audit-tests" as Route },
   { labelAr: "عمليات التدقيق", icon: Play, href: "/runs" as Route },
-  { labelAr: "نتائج التدقيق", icon: ClipboardList, href: "/audit-results" },
-  { labelAr: "النتائج والأحكام", icon: Gavel, href: "/findings" },
+  { labelAr: "مؤشّرات التدقيق", icon: ClipboardList, href: "/audit-results" },
+  { labelAr: "نتائج التدقيق", icon: Gavel, href: "/findings" },
   { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
   { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
   { labelAr: "الإعدادات", icon: Settings, href: "/settings" },

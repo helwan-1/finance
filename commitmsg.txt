@@ -1,0 +1,33 @@
+feat: unify Arabic UI terminology and close functional UX gaps
+
+UI-layer closure on top of the delivered audit system — no changes to the
+audit engine, Prisma models, database schema, migrations, or security.
+
+Terminology (Architecture-Consultant-approved glossary): give each concept one
+precise Arabic name across all screens, buttons, messages, states and counters,
+removing the "نتيجة" collision between AuditResult and Finding and the
+"استثناء/مسألة" duplication. AuditResult → مؤشّر تدقيق (screen مؤشّرات التدقيق);
+Finding → نتيجة تدقيق (screen نتائج التدقيق); Exception → مسألة تدقيق; Dataset →
+البيانات المستوردة; Preparation → تجهيز نطاق الفحص; Publish → اعتماد وإرسال للتنفيذ.
+Technical entity/API/Prisma names are unchanged.
+
+Functional UX fixes:
+- Run status auto-refreshes (QUEUED/RUNNING to COMPLETED) without a manual refresh.
+- Import shows the true accepted/rejected counts (was always "0 rows" due to a
+  response field mismatch) and warns clearly when every row is rejected.
+- Documents screen now explains that CSV import feeds audits while document (OCR)
+  upload does not.
+- Empty-population runs surface an actionable notice instead of a silent "0".
+- Audit-result rows are expandable into a detail panel that traces each indicator
+  to its imported source record (evidence).
+- New audit-test management screen (list + author + activate) with an API for
+  config-free executors and validated statistical executors whose frozen
+  parameters are stored on the version and injected into the run at preparation.
+- Clearer new-matter guidance.
+
+Verified: tsc, lint, and build pass; full regression 471 passed / 0 failed /
+41 skipped on real PostgreSQL; live smoke of the new endpoints and statistical
+authoring against real PostgreSQL.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01RviuGKwYDJqLusEHErmok4
