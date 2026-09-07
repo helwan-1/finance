@@ -302,34 +302,37 @@ export async function getAuditResultDetail(actor: RunActor, resultId: string): P
     const disp = await tx.auditResultDispositionState.findFirst({ where: { auditResultId: r.id }, select: { currentState: true } });
     const ev = await tx.auditResultEvidence.findMany({
       where: { auditResultId: r.id },
-      orderBy: [{ datasetId: "asc" }, { sourceRowNo: "asc" }], take: 200,
-      select: { evidenceType: true, datasetId: true, sourceRowNo: true, role: true, importedRecordId: true },
+      orderBy: [{ sourceRowNo: "asc" }], take: 200,
+      select: {
+        evidenceType: true, datasetId: true, sourceRowNo: true, role: true,
+        importedRecordId: true, journalLineId: true, trialBalanceRowId: true,
+      },
     });
-    // Resolve source cells by importedRecordId when present; otherwise (journal
-    // line / entry / trial-balance-row evidence carries datasetId + sourceRowNo,
-    // not a record id) resolve via the unique (datasetId, sourceRowNo) key so the
-    // raw imported cells still trace back for every evidence type.
-    const recIds = ev.map((e) => e.importedRecordId).filter((x): x is string => !!x);
-    const rowKeys = ev
-      .filter((e): e is typeof e & { datasetId: string; sourceRowNo: number } =>
-        !e.importedRecordId && e.datasetId != null && e.sourceRowNo != null)
-      .map((e) => ({ datasetId: e.datasetId, sourceRowNo: e.sourceRowNo }));
-    const [byId, byRow] = await Promise.all([
-      recIds.length
-        ? tx.importedRecord.findMany({ where: { id: { in: recIds } }, select: { id: true, rawCells: true } })
-        : Promise.resolve([]),
-      rowKeys.length
-        ? tx.importedRecord.findMany({ where: { OR: rowKeys }, select: { datasetId: true, sourceRowNo: true, rawCells: true } })
-        : Promise.resolve([]),
+    // Trace every evidence type back to its imported source record's raw cells:
+    // IMPORTED_RECORD carries importedRecordId directly; JOURNAL_LINE and
+    // TRIAL_BALANCE_ROW carry a canonical row id whose importedRecordId is
+    // resolved here (datasetId is not stored on those evidence rows).
+    const jlIds = ev.map((e) => e.journalLineId).filter((x): x is string => !!x);
+    const tbrIds = ev.map((e) => e.trialBalanceRowId).filter((x): x is string => !!x);
+    const [jls, tbrs] = await Promise.all([
+      jlIds.length ? tx.journalLine.findMany({ where: { id: { in: jlIds } }, select: { id: true, importedRecordId: true } }) : Promise.resolve([]),
+      tbrIds.length ? tx.trialBalanceRow.findMany({ where: { id: { in: tbrIds } }, select: { id: true, importedRecordId: true } }) : Promise.resolve([]),
     ]);
-    const recMap = new Map(byId.map((x) => [x.id, x.rawCells]));
-    const rowMap = new Map(byRow.map((x) => [`${x.datasetId}:${x.sourceRowNo}`, x.rawCells]));
-    const cellsFor = (e: (typeof ev)[number]) =>
+    const jlToRec = new Map(jls.map((x) => [x.id, x.importedRecordId]));
+    const tbrToRec = new Map(tbrs.map((x) => [x.id, x.importedRecordId]));
+    const recIdFor = (e: (typeof ev)[number]): string | null =>
       e.importedRecordId
-        ? normalizeCells(recMap.get(e.importedRecordId))
-        : e.sourceRowNo != null
-          ? normalizeCells(rowMap.get(`${e.datasetId}:${e.sourceRowNo}`))
-          : null;
+        ?? (e.journalLineId ? jlToRec.get(e.journalLineId) ?? null : null)
+        ?? (e.trialBalanceRowId ? tbrToRec.get(e.trialBalanceRowId) ?? null : null);
+    const allRecIds = [...new Set(ev.map(recIdFor).filter((x): x is string => !!x))];
+    const recs = allRecIds.length
+      ? await tx.importedRecord.findMany({ where: { id: { in: allRecIds } }, select: { id: true, rawCells: true } })
+      : [];
+    const recMap = new Map(recs.map((x) => [x.id, x.rawCells]));
+    const cellsFor = (e: (typeof ev)[number]) => {
+      const recId = recIdFor(e);
+      return recId ? normalizeCells(recMap.get(recId)) : null;
+    };
     return {
       id: r.id, runId: r.runId, resultKind: r.resultKind, resultCode: r.resultCode,
       severity: String(r.severity), score: r.score.toString(), resultSemanticFingerprint: r.resultSemanticFingerprint,
