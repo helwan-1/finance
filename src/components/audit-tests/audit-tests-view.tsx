@@ -74,8 +74,13 @@ export function AuditTestsView() {
 
   const onSelectKind = (rk: string) => {
     setRegistryKey(rk);
-    setPickedDs(new Set());
     const spec = creatable.find((c) => `${c.testType}:${c.kind}` === rk);
+    // Auto-fill sensible defaults so the auditor rarely types anything: a key
+    // derived from the executor kind, the Arabic name, and all required dataset
+    // kinds preselected. Every field stays editable.
+    setKey(spec ? spec.kind.replaceAll("_", "-") : "");
+    setNameAr(spec ? (KIND_LABEL_AR[spec.kind] ?? "") : "");
+    setPickedDs(new Set(spec?.datasetKinds ?? []));
     setParams(spec?.params ? { ...STAT_DEFAULTS[spec.params] } : {});
   };
 
@@ -157,6 +162,7 @@ export function AuditTestsView() {
               <div>
                 <label className="mb-1 block text-sm font-medium">المفتاح (رمز فريد)</label>
                 <input className={field} value={key} onChange={(e) => setKey(e.target.value)} placeholder="مثال: GL-BALANCE" dir="ltr" />
+                <p className="mt-1 text-xs text-[rgb(var(--muted))]">يُملأ تلقائيًا من نوع الاختبار — عدّله فقط عند إنشاء أكثر من اختبار بنفس النوع.</p>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">الاسم (عربي)</label>
