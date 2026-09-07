@@ -305,11 +305,31 @@ export async function getAuditResultDetail(actor: RunActor, resultId: string): P
       orderBy: [{ datasetId: "asc" }, { sourceRowNo: "asc" }], take: 200,
       select: { evidenceType: true, datasetId: true, sourceRowNo: true, role: true, importedRecordId: true },
     });
+    // Resolve source cells by importedRecordId when present; otherwise (journal
+    // line / entry / trial-balance-row evidence carries datasetId + sourceRowNo,
+    // not a record id) resolve via the unique (datasetId, sourceRowNo) key so the
+    // raw imported cells still trace back for every evidence type.
     const recIds = ev.map((e) => e.importedRecordId).filter((x): x is string => !!x);
-    const recs = recIds.length
-      ? await tx.importedRecord.findMany({ where: { id: { in: recIds } }, select: { id: true, rawCells: true } })
-      : [];
-    const recMap = new Map(recs.map((x) => [x.id, x.rawCells]));
+    const rowKeys = ev
+      .filter((e): e is typeof e & { datasetId: string; sourceRowNo: number } =>
+        !e.importedRecordId && e.datasetId != null && e.sourceRowNo != null)
+      .map((e) => ({ datasetId: e.datasetId, sourceRowNo: e.sourceRowNo }));
+    const [byId, byRow] = await Promise.all([
+      recIds.length
+        ? tx.importedRecord.findMany({ where: { id: { in: recIds } }, select: { id: true, rawCells: true } })
+        : Promise.resolve([]),
+      rowKeys.length
+        ? tx.importedRecord.findMany({ where: { OR: rowKeys }, select: { datasetId: true, sourceRowNo: true, rawCells: true } })
+        : Promise.resolve([]),
+    ]);
+    const recMap = new Map(byId.map((x) => [x.id, x.rawCells]));
+    const rowMap = new Map(byRow.map((x) => [`${x.datasetId}:${x.sourceRowNo}`, x.rawCells]));
+    const cellsFor = (e: (typeof ev)[number]) =>
+      e.importedRecordId
+        ? normalizeCells(recMap.get(e.importedRecordId))
+        : e.sourceRowNo != null
+          ? normalizeCells(rowMap.get(`${e.datasetId}:${e.sourceRowNo}`))
+          : null;
     return {
       id: r.id, runId: r.runId, resultKind: r.resultKind, resultCode: r.resultCode,
       severity: String(r.severity), score: r.score.toString(), resultSemanticFingerprint: r.resultSemanticFingerprint,
@@ -317,7 +337,7 @@ export async function getAuditResultDetail(actor: RunActor, resultId: string): P
       evidence: ev.map((e) => ({
         evidenceType: String(e.evidenceType), datasetId: e.datasetId, sourceRowNo: e.sourceRowNo,
         role: e.role ?? null, importedRecordId: e.importedRecordId,
-        cells: e.importedRecordId ? normalizeCells(recMap.get(e.importedRecordId)) : null,
+        cells: cellsFor(e),
       })),
     };
   });
