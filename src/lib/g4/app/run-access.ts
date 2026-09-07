@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { TenantTx } from "@/lib/db/tenant";
 import { withTenantContext } from "@/lib/db/tenant";
+import { demoAllowed } from "@/lib/security/env";
 import { createDraftRun } from "@/lib/g4/run";
 import { beginPreparation, sealPreparation, type TestSelection } from "@/lib/g4/preparation";
 import { publishRun } from "@/lib/g4/publish";
@@ -362,16 +363,22 @@ export async function deleteDataset(actor: RunActor, datasetId: string): Promise
       );
     }
 
-    // Clear the one self-referential RESTRICT FK (import_batches.resultDatasetId)
-    // so the cascade delete can proceed; every other child row cascades on delete.
-    await tx.importBatch.updateMany({ where: { resultDatasetId: datasetId }, data: { resultDatasetId: null } });
-
     try {
+      // Clear the one self-referential RESTRICT FK (import_batches.resultDatasetId)
+      // so the cascade delete can proceed; every other child row cascades on delete.
+      await tx.importBatch.updateMany({ where: { resultDatasetId: datasetId }, data: { resultDatasetId: null } });
       await tx.dataset.delete({ where: { id: datasetId } });
     } catch (e) {
-      // A remaining RESTRICT (a run/evidence table) means it is still referenced.
+      // A RESTRICT FK (a run/evidence table) means it is still referenced.
       if ((e as { code?: string })?.code === "P2003") {
         throw new RunValidationError("لا يمكن حذف هذه المجموعة لأنها مرتبطة بسجلات تدقيق.");
+      }
+      // Surface the real cause: log it, and outside production return the detail
+      // so it is visible during setup/testing rather than a generic 503.
+      console.error("[datasets:delete] failed", e);
+      if (demoAllowed()) {
+        const code = (e as { code?: string })?.code;
+        throw new RunValidationError(`تعذّر الحذف — ${code ? code + ": " : ""}${e instanceof Error ? e.message : String(e)}`);
       }
       throw e;
     }
