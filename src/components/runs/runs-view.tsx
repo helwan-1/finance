@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Play, FileCheck2, Rocket, RefreshCw } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
@@ -36,6 +36,15 @@ export function RunsView() {
   const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(new Set());
   const [pickedTests, setPickedTests] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
+
+  // Switching engagements must not leak the selected run or the dataset/test
+  // picks across engagements — reset them so each engagement starts clean.
+  useEffect(() => {
+    setSelected(null);
+    setPickedDatasets(new Set());
+    setPickedTests(new Set());
+    setErr(null);
+  }, [engagementId]);
 
   const runs = useQuery({
     queryKey: ["runs", engagementId],
