@@ -7,7 +7,22 @@ import { useUIStore } from "@/store/ui-store";
 
 interface RunSummary { id: string; status: string; label: string | null; freezeGeneration: string | null; configFingerprint: string | null; createdAt: string }
 interface Prep { id: string; generationNo: number; status: string; failureCode: string | null }
-interface DatasetOption { id: string; kind: string; status: string }
+interface DatasetOption { id: string; kind: string; status: string; datasetHash?: string | null; createdAt?: string }
+
+const DS_KIND_AR: Record<string, string> = {
+  GENERAL_LEDGER: "دفتر الأستاذ",
+  TRIAL_BALANCE: "ميزان المراجعة",
+  BANK: "كشف بنكي",
+  OTHER: "أخرى",
+};
+const DS_STATUS_AR: Record<string, string> = {
+  COMPLETED: "مكتملة",
+  COMPLETED_WITH_ISSUES: "مكتملة مع ملاحظات",
+};
+function fmtDate(iso?: string): string {
+  if (!iso) return "";
+  try { return new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)); } catch { return iso; }
+}
 interface TestOption { key: string; name: string; nameAr: string; testType: string }
 interface JobSummary { id: string; attemptNo: number; status: string; failureCode: string | null }
 interface ResultSummary { id: string; resultCode: string; severity: string; resultSemanticFingerprint: string }
@@ -147,7 +162,12 @@ export function RunsView() {
                 {datasets.data?.length ? datasets.data.map((d) => (
                   <label key={d.id} className="flex items-center gap-2 py-1 text-sm">
                     <input type="checkbox" checked={pickedDatasets.has(d.id)} onChange={() => toggle(pickedDatasets, d.id, setPickedDatasets)} />
-                    <span>{d.kind} — {d.id.slice(0, 10)} <span className="text-[rgb(var(--muted))]">({d.status})</span></span>
+                    <span>
+                      {DS_KIND_AR[d.kind] ?? d.kind}
+                      {d.createdAt && <span className="text-[rgb(var(--muted))]"> · {fmtDate(d.createdAt)}</span>}
+                      {d.datasetHash && <span className="font-mono text-[11px] text-[rgb(var(--muted))]"> · {d.datasetHash.slice(0, 10)}</span>}
+                      <span className="text-[rgb(var(--muted))]"> ({DS_STATUS_AR[d.status] ?? d.status})</span>
+                    </span>
                   </label>
                 )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد بيانات مستوردة. استورد ملفاً أولاً.</p>}
               </div>
