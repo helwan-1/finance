@@ -25,11 +25,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ar" dir="rtl" className={tajawal.variable}>
-      <head>
-        {/* Apply the saved language's direction before paint (no flash). */}
-        <script dangerouslySetInnerHTML={{ __html: LOCALE_NO_FLASH_SCRIPT }} />
-      </head>
       <body className="min-h-screen font-sans antialiased">
+        {/* Apply the saved language's direction before paint (no flash). Kept as
+            the first body child — a manual <head> in the App Router root layout
+            suppresses Next's automatic stylesheet injection. */}
+        <script dangerouslySetInnerHTML={{ __html: LOCALE_NO_FLASH_SCRIPT }} />
         <LocaleController />
         <QueryProvider>{children}</QueryProvider>
       </body>
