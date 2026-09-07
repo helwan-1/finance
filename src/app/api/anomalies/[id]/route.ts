@@ -2,12 +2,98 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { AnomalyStatus, AuditAction } from "@prisma/client";
 import { getSession } from "@/lib/auth/session";
+import { authorize } from "@/lib/auth/guard";
 import { can } from "@/lib/auth/rbac";
 import { demoAllowed } from "@/lib/security/env";
 import { withTenantContext } from "@/lib/db/tenant";
 import { recordAuditLog } from "@/lib/audit-log";
 import { publishAuditEvent } from "@/lib/events";
-import type { AnomalyDTO } from "@/lib/ui-types";
+import type { AnomalyDTO, AnomalyDetailDTO } from "@/lib/ui-types";
+
+/**
+ * GET /api/anomalies/:id — full case detail for the audit dashboard: rule
+ * metadata, structured evidence, the underlying transaction and the resolution
+ * history. Read-path guard (anomalies:view); RLS scopes the row to the firm.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: { id: string } },
+): Promise<NextResponse> {
+  const authz = await authorize("anomalies:view");
+  if (!authz.ok) return authz.response;
+  if (!authz.session) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  try {
+    const row = await withTenantContext(authz.session.auditFirmId, (tx) =>
+      tx.anomalyFlag.findUnique({
+        where: { id: params.id },
+        include: {
+          transaction: {
+            select: {
+              reference: true,
+              description: true,
+              amount: true,
+              vatAmount: true,
+              currency: true,
+              type: true,
+              source: true,
+              counterparty: true,
+              account: true,
+              postedAt: true,
+              valueDate: true,
+            },
+          },
+          resolvedBy: { select: { fullNameAr: true } },
+          auditRule: { select: { nameAr: true } },
+        },
+      }),
+    );
+    if (!row) {
+      return NextResponse.json({ error: "Anomaly not found" }, { status: 404 });
+    }
+
+    const evidence =
+      row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+        ? (row.evidence as Record<string, unknown>)
+        : null;
+
+    const anomaly: AnomalyDetailDTO = {
+      id: row.id,
+      ruleCode: row.ruleCode,
+      severity: row.severity,
+      status: row.status,
+      titleAr: row.titleAr,
+      descriptionAr: row.descriptionAr,
+      score: row.score.toString(),
+      detectedAt: row.detectedAt.toISOString(),
+      evidence,
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
+      resolvedByName: row.resolvedBy?.fullNameAr ?? null,
+      resolutionNote: row.resolutionNote ?? null,
+      auditRuleName: row.auditRule?.nameAr ?? null,
+      transaction: row.transaction
+        ? {
+            reference: row.transaction.reference,
+            description: row.transaction.description,
+            amount: row.transaction.amount.toString(),
+            vatAmount: row.transaction.vatAmount?.toString() ?? null,
+            currency: row.transaction.currency,
+            type: row.transaction.type,
+            source: row.transaction.source,
+            counterparty: row.transaction.counterparty,
+            account: row.transaction.account,
+            postedAt: row.transaction.postedAt.toISOString(),
+            valueDate: row.transaction.valueDate.toISOString(),
+          }
+        : null,
+    };
+    return NextResponse.json({ anomaly });
+  } catch {
+    return NextResponse.json({ error: "تعذّر تحميل التفاصيل" }, { status: 503 });
+  }
+}
 
 /** Resolution actions the client may request, mapped to status + audit action. */
 const ACTIONS: Record<

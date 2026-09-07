@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   TrendingUp,
   CopyCheck,
@@ -14,9 +15,11 @@ import {
   FileWarning,
   CalendarClock,
   SlidersHorizontal,
+  Eye,
   type LucideIcon,
 } from "lucide-react";
 import type { AnomalyDTO, AnomalyRuleCode } from "@/lib/ui-types";
+import { AnomalyDetailDialog } from "./anomaly-detail-dialog";
 import {
   RULE_LABELS_AR,
   SEVERITY_BADGE,
@@ -48,6 +51,7 @@ const DEFAULT_ICON: LucideIcon = SlidersHorizontal;
 
 export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
   const Icon = RULE_ICON[anomaly.ruleCode] ?? DEFAULT_ICON;
+  const [showDetail, setShowDetail] = useState(false);
 
   return (
     <article className="surface relative flex gap-4 overflow-hidden rounded-xl border p-4 shadow-card">
@@ -109,8 +113,23 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
           <span>{formatRelative(anomaly.detectedAt)}</span>
         </div>
 
+        <div className="mt-3 print:hidden">
+          <button
+            type="button"
+            onClick={() => setShowDetail(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-brand-600/40 px-2.5 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-700/15"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            التفاصيل
+          </button>
+        </div>
+
         <ResolutionActions anomaly={anomaly} />
       </div>
+
+      {showDetail && (
+        <AnomalyDetailDialog anomalyId={anomaly.id} onClose={() => setShowDetail(false)} />
+      )}
 
       <div className="hidden shrink-0 flex-col items-center justify-center sm:flex">
         <span className="text-lg font-bold tabular-nums">

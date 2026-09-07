@@ -47,6 +47,44 @@ export interface AnomaliesResponse {
   total: number;
 }
 
+/** Full transaction detail shown inside the anomaly detail dialog. */
+export interface AnomalyTransactionDTO {
+  reference: string;
+  description: string;
+  amount: string;
+  vatAmount: string | null;
+  currency: string;
+  type: string;
+  source: string;
+  counterparty: string | null;
+  account: string | null;
+  postedAt: string;
+  valueDate: string;
+}
+
+/** DTO returned by GET /api/anomalies/:id — the full case detail. */
+export interface AnomalyDetailDTO {
+  id: string;
+  ruleCode: AnomalyRuleCode;
+  severity: AnomalySeverity;
+  status: AnomalyStatus;
+  titleAr: string;
+  descriptionAr: string;
+  score: string;
+  detectedAt: string;
+  /** Structured evidence (Benford stats, matched pair ids, …) — arbitrary JSON. */
+  evidence: Record<string, unknown> | null;
+  resolvedAt: string | null;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
+  auditRuleName: string | null;
+  transaction: AnomalyTransactionDTO | null;
+}
+
+export interface AnomalyDetailResponse {
+  anomaly: AnomalyDetailDTO;
+}
+
 /** Filters accepted by the FilterBar / anomalies API. */
 export interface AnomalyFilters {
   search: string;
