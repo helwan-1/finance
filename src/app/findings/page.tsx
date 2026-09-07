@@ -1,17 +1,12 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { PageHeading } from "@/components/layout/page-heading";
 import { FindingsView } from "@/components/findings/findings-view";
 
 export default function FindingsPage() {
   return (
     <DashboardShell>
       <div className="mx-auto max-w-6xl space-y-5">
-        <div>
-          <h1 className="text-xl font-bold">نتائج التدقيق</h1>
-          <p className="text-sm text-[rgb(var(--muted))]">
-            إدارة مسائل التدقيق وتحويلها إلى نتائج تدقيق موثّقة، مع دورة
-            إعداد ومراجعة واعتماد.
-          </p>
-        </div>
+        <PageHeading titleKey="page.findings.title" subtitleKey="page.findings.subtitle" />
         <FindingsView />
       </div>
     </DashboardShell>

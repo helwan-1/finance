@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { PageHeading } from "@/components/layout/page-heading";
 import { StatCards } from "@/components/anomalies/stat-cards";
 import { FilterBar } from "@/components/anomalies/filter-bar";
 import { AnomaliesFeed } from "@/components/anomalies/anomalies-feed";
@@ -17,12 +18,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold">لوحة التدقيق</h1>
-            <p className="text-sm text-[rgb(var(--muted))]">
-              رصد الحالات الشاذة في القيود والمعاملات المالية لحظياً.
-            </p>
-          </div>
+          <PageHeading titleKey="page.dashboard.title" subtitleKey="page.dashboard.subtitle" />
           <ExportButtons />
         </div>
 

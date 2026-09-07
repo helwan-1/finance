@@ -19,39 +19,42 @@ import {
   FlaskConical,
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 
 interface NavItem {
-  labelAr: string;
+  labelKey: MessageKey;
   icon: typeof LayoutDashboard;
   /** Route when the destination exists; omit for not-yet-built sections. */
   href?: Route;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { labelAr: "لوحة التحكم", icon: LayoutDashboard, href: "/" },
-  { labelAr: "المستندات", icon: FileText, href: "/documents" },
-  { labelAr: "المطابقة", icon: GitCompareArrows, href: "/reconciliation" },
-  { labelAr: "قواعد التدقيق", icon: Scale, href: "/rules" },
-  { labelAr: "الحالات الشاذة", icon: ShieldAlert, href: "/anomalies" },
-  { labelAr: "اختبارات التدقيق", icon: FlaskConical, href: "/audit-tests" as Route },
-  { labelAr: "عمليات التدقيق", icon: Play, href: "/runs" as Route },
-  { labelAr: "مؤشّرات التدقيق", icon: ClipboardList, href: "/audit-results" },
-  { labelAr: "نتائج التدقيق", icon: Gavel, href: "/findings" },
-  { labelAr: "التحليلات", icon: BarChart3, href: "/analytics" },
-  { labelAr: "سجل التدقيق", icon: ScrollText, href: "/audit-log" },
-  { labelAr: "الإعدادات", icon: Settings, href: "/settings" },
+  { labelKey: "nav.dashboard", icon: LayoutDashboard, href: "/" },
+  { labelKey: "nav.documents", icon: FileText, href: "/documents" },
+  { labelKey: "nav.reconciliation", icon: GitCompareArrows, href: "/reconciliation" },
+  { labelKey: "nav.rules", icon: Scale, href: "/rules" },
+  { labelKey: "nav.anomalies", icon: ShieldAlert, href: "/anomalies" },
+  { labelKey: "nav.auditTests", icon: FlaskConical, href: "/audit-tests" as Route },
+  { labelKey: "nav.runs", icon: Play, href: "/runs" as Route },
+  { labelKey: "nav.auditResults", icon: ClipboardList, href: "/audit-results" },
+  { labelKey: "nav.findings", icon: Gavel, href: "/findings" },
+  { labelKey: "nav.analytics", icon: BarChart3, href: "/analytics" },
+  { labelKey: "nav.auditLog", icon: ScrollText, href: "/audit-log" },
+  { labelKey: "nav.settings", icon: Settings, href: "/settings" },
 ];
 
 export function Sidebar() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const pathname = usePathname();
+  const { t } = useT();
 
   return (
     <aside
-      className={`surface hidden shrink-0 border-l transition-[width] duration-200 md:flex md:flex-col print:!hidden ${
+      className={`surface hidden shrink-0 border-e transition-[width] duration-200 md:flex md:flex-col print:!hidden ${
         sidebarOpen ? "md:w-64" : "md:w-20"
       }`}
-      aria-label="التنقل الرئيسي"
+      aria-label={t("nav.primary")}
     >
       <div className="flex h-16 items-center gap-3 border-b px-5 surface">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
@@ -59,9 +62,9 @@ export function Sidebar() {
         </div>
         {sidebarOpen && (
           <div className="leading-tight">
-            <p className="text-sm font-bold">مدقق مالي</p>
+            <p className="text-sm font-bold">{t("brand.name")}</p>
             <p className="text-[11px] text-[rgb(var(--muted))]">
-              لوحة التدقيق الذكية
+              {t("brand.tagline")}
             </p>
           </div>
         )}
@@ -80,27 +83,27 @@ export function Sidebar() {
           if (item.href) {
             return (
               <Link
-                key={item.labelAr}
+                key={item.labelKey}
                 href={item.href}
                 className={classes}
                 aria-current={active ? "page" : undefined}
               >
                 <Icon className="h-5 w-5 shrink-0" />
-                {sidebarOpen && <span>{item.labelAr}</span>}
+                {sidebarOpen && <span>{t(item.labelKey)}</span>}
               </Link>
             );
           }
 
           return (
             <button
-              key={item.labelAr}
+              key={item.labelKey}
               type="button"
               disabled
               className={`${classes} cursor-not-allowed opacity-50`}
-              title="قريباً"
+              title={t("nav.comingSoon")}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              {sidebarOpen && <span>{item.labelAr}</span>}
+              {sidebarOpen && <span>{t(item.labelKey)}</span>}
             </button>
           );
         })}
@@ -108,7 +111,7 @@ export function Sidebar() {
 
       {sidebarOpen && (
         <div className="border-t p-4 text-[11px] text-[rgb(var(--muted))]">
-          الإصدار 0.1.0 — نسخة تجريبية (MVP)
+          {t("brand.version")}
         </div>
       )}
     </aside>
