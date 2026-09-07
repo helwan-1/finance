@@ -23,7 +23,7 @@ function fmtDate(iso?: string): string {
   if (!iso) return "";
   try { return new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)); } catch { return iso; }
 }
-interface TestOption { key: string; name: string; nameAr: string; testType: string }
+interface TestOption { key: string; name: string; nameAr: string; testType: string; supportedDatasetKinds?: string[] }
 interface JobSummary { id: string; attemptNo: number; status: string; failureCode: string | null; failureDetail: string | null }
 interface ResultSummary { id: string; resultCode: string; severity: string; resultSemanticFingerprint: string }
 
@@ -118,7 +118,24 @@ export function RunsView() {
   if (!engagementId) return <div className={card}>اختر ارتباط تدقيق من الأعلى لعرض عمليات التدقيق.</div>;
 
   const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); apply(n); };
-  const canBegin = pickedDatasets.size > 0 && pickedTests.size > 0 && (run?.status === "DRAFT" || run?.status === "PREPARING");
+
+  // Dataset kinds available in this engagement, and those currently checked, so a
+  // test whose required kind is absent can be blocked before the run fails CONFIG.
+  const availableKinds = new Set((datasets.data ?? []).map((d) => d.kind));
+  const checkedKinds = new Set((datasets.data ?? []).filter((d) => pickedDatasets.has(d.id)).map((d) => d.kind));
+  const testDataState = (t: TestOption): "ok" | "not_imported" | "not_selected" => {
+    const req = t.supportedDatasetKinds ?? [];
+    if (req.length === 0) return "ok"; // no dataset requirement
+    if (!req.some((k) => availableKinds.has(k))) return "not_imported";
+    if (!req.some((k) => checkedKinds.has(k))) return "not_selected";
+    return "ok";
+  };
+  // Every checked test must have its required dataset kind selected.
+  const checkedTestsSatisfied = [...pickedTests].every((key) => {
+    const t = tests.data?.find((x) => x.key === key);
+    return !t || testDataState(t) === "ok";
+  });
+  const canBegin = pickedDatasets.size > 0 && pickedTests.size > 0 && checkedTestsSatisfied && (run?.status === "DRAFT" || run?.status === "PREPARING");
 
   return (
     <div className="space-y-4">
@@ -173,12 +190,21 @@ export function RunsView() {
               </div>
               <div>
                 <p className="mb-1 text-sm font-medium">اختبارات التدقيق</p>
-                {tests.data?.length ? tests.data.map((t) => (
-                  <label key={t.key} className="flex items-center gap-2 py-1 text-sm">
-                    <input type="checkbox" checked={pickedTests.has(t.key)} onChange={() => toggle(pickedTests, t.key, setPickedTests)} />
-                    <span>{t.nameAr || t.name} <span className="text-[rgb(var(--muted))]">({t.testType})</span></span>
-                  </label>
-                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد اختبارات مُفعّلة.</p>}
+                {tests.data?.length ? tests.data.map((t) => {
+                  const state = testDataState(t);
+                  const reqAr = (t.supportedDatasetKinds ?? []).map((k) => DS_KIND_AR[k] ?? k).join(" أو ");
+                  const disabled = state === "not_imported";
+                  return (
+                    <label key={t.key} className={`flex items-start gap-2 py-1 text-sm ${disabled ? "opacity-50" : ""}`}>
+                      <input type="checkbox" className="mt-1" checked={pickedTests.has(t.key)} disabled={disabled} onChange={() => toggle(pickedTests, t.key, setPickedTests)} />
+                      <span>
+                        {t.nameAr || t.name} <span className="text-[rgb(var(--muted))]">({t.testType})</span>
+                        {state === "not_imported" && <span className="block text-xs text-[rgb(var(--muted))]">يتطلب بيانات: {reqAr} — غير مستوردة لهذه المهمة</span>}
+                        {state === "not_selected" && pickedTests.has(t.key) && <span className="block text-xs text-amber-600">اختر مجموعة بيانات من نوع: {reqAr}</span>}
+                      </span>
+                    </label>
+                  );
+                }) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد اختبارات مُفعّلة.</p>}
               </div>
               {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل تجهيز نطاق الفحص ({prep.data.failureCode}). عدّل الاختيار وابدأ من جديد.</p>}
               <button className={btn} disabled={!canBegin || beginPrep.isPending} onClick={() => { setErr(null); beginPrep.mutate(); }}>

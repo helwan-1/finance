@@ -6,6 +6,7 @@ import { createDraftRun } from "@/lib/g4/run";
 import { beginPreparation, sealPreparation, type TestSelection } from "@/lib/g4/preparation";
 import { publishRun } from "@/lib/g4/publish";
 import { parseRoundConfig, parseDuplicateConfig, gcd } from "@/lib/g4/execution/statistical/config";
+import { REGISTRY } from "@/lib/g4/execution/registry";
 
 /**
  * G6 Phase B — authenticated AuditRun application boundary.
@@ -348,7 +349,7 @@ export async function getAuditResultDetail(actor: RunActor, resultId: string): P
 }
 
 export interface DatasetOption { id: string; kind: string; status: string; datasetHash: string | null; createdAt: string }
-export interface TestOption { key: string; name: string; nameAr: string; testType: string }
+export interface TestOption { key: string; name: string; nameAr: string; testType: string; supportedDatasetKinds: string[] }
 export interface PreparationSummary { id: string; generationNo: number; status: string; failureCode: string | null; sealedAt: string | null }
 
 /** Consumable datasets in an engagement the actor belongs to (for run config). */
@@ -443,15 +444,29 @@ export async function listAuditTests(actor: RunActor): Promise<TestOption[]> {
       orderBy: { key: "asc" }, take: 500,
       select: { key: true, name: true, nameAr: true, testType: true, currentVersionId: true },
     });
-    const activeIds = new Set(
-      (await tx.auditTestVersion.findMany({
-        where: { id: { in: tests.map((t) => t.currentVersionId!).filter(Boolean) }, status: "ACTIVE" },
-        select: { id: true },
-      })).map((v) => v.id),
+    // Active versions carry the frozen executor kind (definitionJson.kind); map
+    // each to its executor's supported dataset kinds so the UI can pre-check that
+    // the required data is present before a run is prepared.
+    const versions = await tx.auditTestVersion.findMany({
+      where: { id: { in: tests.map((t) => t.currentVersionId!).filter(Boolean) }, status: "ACTIVE" },
+      select: { id: true, definitionJson: true },
+    });
+    const kindByVersion = new Map(
+      versions.map((v) => {
+        const dj = (v.definitionJson ?? {}) as { kind?: string; dqKind?: string };
+        return [v.id, dj.kind ?? dj.dqKind ?? null] as const;
+      }),
     );
     return tests
-      .filter((t) => t.currentVersionId && activeIds.has(t.currentVersionId))
-      .map((t) => ({ key: t.key, name: t.name, nameAr: t.nameAr, testType: String(t.testType) }));
+      .filter((t) => t.currentVersionId && kindByVersion.has(t.currentVersionId))
+      .map((t) => {
+        const kind = kindByVersion.get(t.currentVersionId!);
+        const exec = kind ? REGISTRY.get(`${String(t.testType)}:${kind}`) : undefined;
+        return {
+          key: t.key, name: t.name, nameAr: t.nameAr, testType: String(t.testType),
+          supportedDatasetKinds: exec ? [...exec.supportedDatasetKinds] : [],
+        };
+      });
   });
 }
 
