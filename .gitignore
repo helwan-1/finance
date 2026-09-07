@@ -37,3 +37,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 .g1-evidence/
+*.patch
+commitmsg.txt
+APPLYSTEPS.md
+diagnose*.sql
+check_ds.sql
+show_evidence.sql
+provision-test.mjs
