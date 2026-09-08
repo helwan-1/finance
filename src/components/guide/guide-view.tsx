@@ -366,7 +366,7 @@ function Module({ section }: { section: Section }) {
             {section.tags.map((t) => (
               <span
                 key={t}
-                className="rounded-md border px-2 py-0.5 font-mono text-[11px] text-[rgb(var(--muted))]"
+                className="rounded-md border px-2 py-0.5 text-[11px] text-[rgb(var(--muted))]"
               >
                 {t}
               </span>
@@ -384,7 +384,7 @@ function Module({ section }: { section: Section }) {
               key={i}
               className="surface flex gap-3 rounded-lg border p-3 text-sm leading-6"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-black/5 font-mono text-xs font-semibold text-brand-700 dark:bg-white/5 dark:text-brand-300">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-black/5 font-mono text-xs font-semibold text-brand-700 dark:bg-white/10 dark:text-brand-200">
                 {i + 1}
               </span>
               <span className="min-w-0">{step}</span>
@@ -446,8 +446,10 @@ function CalloutBox({ callout }: { callout: Callout }) {
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
+  // font-sans is required: the native <kbd> defaults to monospace, which breaks
+  // Arabic letter-joining and hurts legibility. Brighter teal text in dark mode.
   return (
-    <kbd className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[12px] font-semibold text-brand-700 dark:bg-brand-700/20 dark:text-brand-300">
+    <kbd className="rounded-md bg-brand-50 px-1.5 py-0.5 font-sans text-[12.5px] font-semibold text-brand-700 dark:bg-brand-500/20 dark:text-brand-100">
       {children}
     </kbd>
   );
