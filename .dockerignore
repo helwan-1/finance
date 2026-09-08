@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.docker.example
+npm-debug.log*
+.DS_Store
+tests
+.g1-evidence
+*.tsbuildinfo
+scratchpad

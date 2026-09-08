@@ -1,23 +1,27 @@
-# Local PostgreSQL for development.
-# Usage:
-#   docker compose up -d
-#   cp .env.example .env   # DATABASE_URL already matches these credentials
-#   npm run prisma:migrate && npm run prisma:seed
+# مدقّق مالي — حزمة تشغيل كاملة عبر Docker (قاعدة البيانات + التطبيق + المُشغّل الخلفي).
 #
-# The host port is 5433 (not the default 5432) to avoid clashing with any other
-# local PostgreSQL / project already using 5432. Change the left-hand number if
-# 5433 is also taken, and update DATABASE_URL in .env to match.
+# التشغيل على الخادم:
+#   cp .env.docker.example .env.docker   # ثم عبّئ الأسرار وكلمات المرور
+#   docker compose up -d --build
+#   افتح: http://<IP-الخادم>:3000
+#
+# ملاحظات:
+#   - كل الخدمات تقرأ الأسرار من ملف .env.docker (ليس .env الخاص بالإنتاج).
+#   - عند أول إقلاع: تُطبَّق الترحيلات، وتُفعَّل أدوار قاعدة البيانات، وتُزرع
+#     الحسابات الأولية تلقائيًا (إن كانت القاعدة فارغة).
+#   - المُشغّل الخلفي (dispatch) ضروري لتنفيذ عمليات التدقيق G4.
 services:
   db:
     image: postgres:16-alpine
     container_name: audit_dashboard_db
     restart: unless-stopped
+    env_file: .env.docker
     environment:
       POSTGRES_USER: audit
-      POSTGRES_PASSWORD: audit
       POSTGRES_DB: audit_dashboard
+      # POSTGRES_PASSWORD يأتي من .env.docker (يجب أن يطابق كلمة مرور المالك في DIRECT_DATABASE_URL)
     ports:
-      # host:container — the container still listens on 5432 internally.
+      # اختياري للوصول بأدوات قاعدة البيانات من المضيف؛ التطبيق يتصل داخليًا عبر db:5432
       - "5433:5432"
     volumes:
       - audit_pgdata:/var/lib/postgresql/data
@@ -25,7 +29,46 @@ services:
       test: ["CMD-SHELL", "pg_isready -U audit -d audit_dashboard"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  web:
+    build: .
+    image: sarat-web
+    container_name: sarat_web
+    restart: unless-stopped
+    env_file: .env.docker
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "true" # هذه الخدمة تتولّى الترحيل + تفعيل الأدوار + الزرع
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - sarat_object_store:/data/object-store
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/login >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  dispatch:
+    image: sarat-web # نفس صورة الواجهة
+    container_name: sarat_dispatch
+    restart: unless-stopped
+    env_file: .env.docker
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "false" # لا يرحّل — ينتظر جاهزية الواجهة ثم يشغّل الموزّع
+    command: ["npm", "run", "dispatch"]
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - sarat_object_store:/data/object-store
 
 volumes:
   audit_pgdata:
+  sarat_object_store:
