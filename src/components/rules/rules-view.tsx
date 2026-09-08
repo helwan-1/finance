@@ -102,7 +102,7 @@ export function RulesView() {
       </div>
 
       {runMsg && (
-        <div className="surface rounded-lg border border-brand-500/30 bg-brand-50 px-4 py-2.5 text-sm text-brand-700 dark:bg-brand-700/10">
+        <div className="surface rounded-lg border border-brand-500/30 bg-brand-50 px-4 py-2.5 text-sm text-brand-700 dark:bg-brand-700/10 dark:text-brand-300">
           {runMsg}
         </div>
       )}

@@ -118,7 +118,7 @@ export function SettingsView() {
               const on = form.weekendDays.includes(day);
               return (
                 <button key={day} type="button" disabled={!data.canEdit} onClick={() => toggleWeekend(day)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${on ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-700/15" : "text-[rgb(var(--muted))]"}`}>
+                  className={`rounded-lg border px-3 py-1.5 text-xs ${on ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-700/20 dark:text-brand-300" : "text-[rgb(var(--muted))]"}`}>
                   {label}
                 </button>
               );

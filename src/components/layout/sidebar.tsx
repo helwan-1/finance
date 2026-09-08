@@ -78,7 +78,7 @@ export function Sidebar() {
           const active = item.href !== undefined && pathname === item.href;
           const classes = `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
             active
-              ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-700/15"
+              ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-700/20 dark:text-brand-300"
               : "text-[rgb(var(--muted))] hover:bg-black/5 dark:hover:bg-white/5"
           }`;
 

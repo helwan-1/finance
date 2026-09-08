@@ -18,11 +18,14 @@
    both the CSS tokens here and Tailwind's class-based `dark:` utilities stay in
    sync (softer dark: lifted off near-black, calmer foreground). */
 :root.dark {
-  --background: 14 19 30;
-  --foreground: 213 221 233;
-  --card: 22 29 43;
-  --border: 37 47 64;
-  --muted: 150 165 184;
+  /* Deeper, near-black ground; surfaces a touch above it for elevation; a
+     clearly brighter border so buttons, inputs and card edges read against the
+     dark ground (previous #161D2B card sat too close to the background). */
+  --background: 8 11 17; /* #080B11 */
+  --foreground: 226 232 241;
+  --card: 16 21 32; /* #101520 — darker than the old #161D2B */
+  --border: 51 63 84; /* #333F54 — brighter for legible outlines */
+  --muted: 160 174 192;
 }
 
 html {

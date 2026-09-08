@@ -108,7 +108,7 @@ export function EngagementSwitcher() {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-brand-700 hover:bg-brand-50 dark:hover:bg-brand-700/15"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-700/20"
             >
               <Plus className="h-4 w-4" />
               مهمة تدقيق جديدة

@@ -20,12 +20,18 @@ const config: Config = {
         // Neutral audit palette + severity semantics.
         brand: {
           // Calm professional teal — restful on the eyes, fitting for audit /
-          // finance, with white-on-brand contrast kept legible.
+          // finance. Full scale so dark mode can use the lighter shades
+          // (200–400) for legible teal text/icons on dark grounds, while light
+          // mode uses 600/700 with legible white-on-brand contrast.
           50: "#edf6f4",
           100: "#d3ebe6",
+          200: "#a9d8cf",
+          300: "#6fc3b6",
+          400: "#33a596",
           500: "#199e91",
           600: "#0f766e",
           700: "#0c5d57",
+          800: "#0a4a45",
         },
         severity: {
           critical: "#dc2626",
