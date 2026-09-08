@@ -121,8 +121,12 @@ export function RunsView() {
 
   // Dataset kinds available in this engagement, and those currently checked, so a
   // test whose required kind is absent can be blocked before the run fails CONFIG.
-  const availableKinds = new Set((datasets.data ?? []).map((d) => d.kind));
-  const checkedKinds = new Set((datasets.data ?? []).filter((d) => pickedDatasets.has(d.id)).map((d) => d.kind));
+  // Guard against a non-array payload (an API error object, a stale cache, etc.)
+  // so a bad response degrades to "no data" instead of crashing the screen.
+  const datasetList: DatasetOption[] = Array.isArray(datasets.data) ? datasets.data : [];
+  const testList: TestOption[] = Array.isArray(tests.data) ? tests.data : [];
+  const availableKinds = new Set(datasetList.map((d) => d.kind));
+  const checkedKinds = new Set(datasetList.filter((d) => pickedDatasets.has(d.id)).map((d) => d.kind));
   const testDataState = (t: TestOption): "ok" | "not_imported" | "not_selected" => {
     const req = t.supportedDatasetKinds ?? [];
     if (req.length === 0) return "ok"; // no dataset requirement
@@ -132,7 +136,7 @@ export function RunsView() {
   };
   // Every checked test must have its required dataset kind selected.
   const checkedTestsSatisfied = [...pickedTests].every((key) => {
-    const t = tests.data?.find((x) => x.key === key);
+    const t = testList.find((x) => x.key === key);
     return !t || testDataState(t) === "ok";
   });
   const canBegin = pickedDatasets.size > 0 && pickedTests.size > 0 && checkedTestsSatisfied && (run?.status === "DRAFT" || run?.status === "PREPARING");
@@ -176,7 +180,7 @@ export function RunsView() {
             <div className="space-y-3">
               <div>
                 <p className="mb-1 text-sm font-medium">البيانات المستوردة</p>
-                {datasets.data?.length ? datasets.data.map((d) => (
+                {datasetList.length ? datasetList.map((d) => (
                   <label key={d.id} className="flex items-center gap-2 py-1 text-sm">
                     <input type="checkbox" checked={pickedDatasets.has(d.id)} onChange={() => toggle(pickedDatasets, d.id, setPickedDatasets)} />
                     <span>
@@ -190,7 +194,7 @@ export function RunsView() {
               </div>
               <div>
                 <p className="mb-1 text-sm font-medium">اختبارات التدقيق</p>
-                {tests.data?.length ? tests.data.map((t) => {
+                {testList.length ? testList.map((t) => {
                   const state = testDataState(t);
                   const reqAr = (t.supportedDatasetKinds ?? []).map((k) => DS_KIND_AR[k] ?? k).join(" أو ");
                   const disabled = state === "not_imported";
