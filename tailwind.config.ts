@@ -15,11 +15,13 @@ const config: Config = {
       colors: {
         // Neutral audit palette + severity semantics.
         brand: {
-          50: "#eef6ff",
-          100: "#d9ebff",
-          500: "#2563eb",
-          600: "#1d4ed8",
-          700: "#1e40af",
+          // Calmer, slightly desaturated blue — less glare than the electric
+          // 1d4ed8, while keeping white-on-brand contrast legible.
+          50: "#eef4fb",
+          100: "#dae7f6",
+          500: "#4c82d6",
+          600: "#3563bd",
+          700: "#2b4f9c",
         },
         severity: {
           critical: "#dc2626",

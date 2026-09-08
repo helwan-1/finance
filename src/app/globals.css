@@ -3,26 +3,38 @@
 @tailwind utilities;
 
 :root {
-  --background: 248 250 252; /* slate-50 */
-  --foreground: 15 23 42; /* slate-900 */
-  --card: 255 255 255;
-  --border: 226 232 240; /* slate-200 */
-  --muted: 100 116 139; /* slate-500 */
+  /* Softer, lower-glare light palette (easier on the eyes than pure white +
+     near-black). Background is a calm cool grey; surfaces are near-white but
+     not pure #fff; text is slate-800 rather than slate-900. */
+  --background: 238 241 245; /* soft cool grey */
+  --foreground: 30 41 59; /* slate-800 */
+  --card: 252 252 253; /* near-white, not pure white */
+  --border: 223 229 236;
+  --muted: 90 105 122;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: 2 6 23; /* slate-950 */
-    --foreground: 226 232 240;
-    --card: 15 23 42; /* slate-900 */
-    --border: 30 41 59; /* slate-800 */
-    --muted: 148 163 184;
+    /* Softer dark palette: lifted background off near-black, calmer foreground. */
+    --background: 14 19 30;
+    --foreground: 213 221 233;
+    --card: 22 29 43;
+    --border: 37 47 64;
+    --muted: 150 165 184;
   }
+}
+
+html {
+  /* Slightly larger base so all rem-based text and spacing scale up. */
+  font-size: 17px;
 }
 
 body {
   background-color: rgb(var(--background));
   color: rgb(var(--foreground));
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* RTL-friendly scrollbars and focus rings. */
