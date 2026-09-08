@@ -32,6 +32,7 @@ const ar = {
   "nav.analytics": "التحليلات",
   "nav.auditLog": "سجل التدقيق",
   "nav.settings": "الإعدادات",
+  "nav.guide": "دليل الاستخدام",
   "nav.comingSoon": "قريباً",
   "nav.primary": "التنقل الرئيسي",
 
@@ -65,6 +66,8 @@ const ar = {
   "page.auditLog.subtitle": "سجل زمني غير قابل للتعديل لكل إجراءات المستخدمين على المهمة.",
   "page.settings.title": "الإعدادات",
   "page.settings.subtitle": "معلومات المكتب ومعاملات التدقيق الافتراضية.",
+  "page.guide.title": "دليل الاستخدام",
+  "page.guide.subtitle": "جولة كاملة عبر جميع وحدات النظام، مرتّبة حسب دورة عمل التدقيق — من إدخال البيانات إلى اعتماد النتائج.",
 } as const;
 
 export type MessageKey = keyof typeof ar;
@@ -89,6 +92,7 @@ const en: Record<MessageKey, string> = {
   "nav.analytics": "Analytics",
   "nav.auditLog": "Audit Log",
   "nav.settings": "Settings",
+  "nav.guide": "User Guide",
   "nav.comingSoon": "Coming soon",
   "nav.primary": "Primary navigation",
 
@@ -120,6 +124,8 @@ const en: Record<MessageKey, string> = {
   "page.auditLog.subtitle": "An immutable, time-ordered record of every user action on the engagement.",
   "page.settings.title": "Settings",
   "page.settings.subtitle": "Firm information and default audit parameters.",
+  "page.guide.title": "User Guide",
+  "page.guide.subtitle": "A full tour of every module, ordered by the audit workflow — from data entry to approved findings.",
 };
 
 export const messages: Record<Locale, Record<MessageKey, string>> = { ar, en };

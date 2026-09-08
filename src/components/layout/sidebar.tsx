@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Play,
   FlaskConical,
+  BookOpen,
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import { useT } from "@/lib/i18n/use-t";
@@ -42,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.analytics", icon: BarChart3, href: "/analytics" },
   { labelKey: "nav.auditLog", icon: ScrollText, href: "/audit-log" },
   { labelKey: "nav.settings", icon: Settings, href: "/settings" },
+  { labelKey: "nav.guide", icon: BookOpen, href: "/guide" as Route },
 ];
 
 export function Sidebar() {
