@@ -10,6 +10,7 @@ import type {
   DocumentsResponse,
 } from "@/lib/ui-types";
 import { DOCUMENT_TYPE_LABELS_AR } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 const TYPE_OPTIONS = Object.keys(DOCUMENT_TYPE_LABELS_AR) as DocumentType[];
 
@@ -33,6 +34,7 @@ async function uploadDocument(input: {
  * runs the OCR parser, then prepend the returned document to the cached list.
  */
 export function UploadButton() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +67,7 @@ export function UploadButton() {
         value={pendingType}
         onChange={(e) => setPendingType(e.target.value as DocumentType)}
         className="surface rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40"
-        aria-label="نوع المستند"
+        aria-label={t("documents.documentType")}
       >
         {TYPE_OPTIONS.map((t) => (
           <option key={t} value={t}>
@@ -92,11 +94,11 @@ export function UploadButton() {
         ) : (
           <Upload className="h-4 w-4" />
         )}
-        رفع مستند
+        {t("documents.uploadDocument")}
       </button>
 
       {mutation.isError && (
-        <span className="text-xs text-severity-critical">فشل الرفع</span>
+        <span className="text-xs text-severity-critical">{t("documents.uploadFailed")}</span>
       )}
     </div>
   );

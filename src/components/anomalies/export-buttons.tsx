@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { FileSpreadsheet, Printer, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
 import type { AnomalyFilters } from "@/lib/ui-types";
 
 function buildExportQuery(
@@ -22,6 +23,7 @@ function buildExportQuery(
 
 /** Export the current anomalies view to Excel (.xlsx) or print/PDF. */
 export function ExportButtons() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const filters = useUIStore((s) => s.filters);
   const [downloading, setDownloading] = useState(false);
@@ -66,7 +68,7 @@ export function ExportButtons() {
         ) : (
           <FileSpreadsheet className="h-4 w-4 text-severity-low" />
         )}
-        تصدير Excel
+        {t("anomalies.export.excel")}
       </button>
       <button
         type="button"
@@ -74,10 +76,10 @@ export function ExportButtons() {
         className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
       >
         <Printer className="h-4 w-4 text-brand-600" />
-        تصدير PDF
+        {t("anomalies.export.pdf")}
       </button>
       {error && (
-        <span className="text-xs text-severity-critical">تعذّر التصدير</span>
+        <span className="text-xs text-severity-critical">{t("anomalies.export.error")}</span>
       )}
     </div>
   );

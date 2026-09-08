@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Loader2 } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 
 export function LoginForm() {
+  const { t } = useT();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,13 +25,13 @@ export function LoginForm() {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error ?? "تعذّر تسجيل الدخول");
+        setError(data.error ?? t("auth.loginError"));
         return;
       }
       router.push("/");
       router.refresh();
     } catch {
-      setError("تعذّر الاتصال بالخادم");
+      setError(t("auth.connectionError"));
     } finally {
       setLoading(false);
     }
@@ -41,16 +43,16 @@ export function LoginForm() {
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-white">
           <ShieldCheck className="h-6 w-6" />
         </div>
-        <h1 className="text-lg font-bold">مدقق مالي</h1>
+        <h1 className="text-lg font-bold">{t("auth.brand")}</h1>
         <p className="text-xs text-[rgb(var(--muted))]">
-          تسجيل الدخول إلى لوحة التدقيق
+          {t("auth.loginSubtitle")}
         </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-1">
           <label htmlFor="email" className="text-sm font-medium">
-            البريد الإلكتروني
+            {t("auth.email")}
           </label>
           <input
             id="email"
@@ -67,7 +69,7 @@ export function LoginForm() {
 
         <div className="space-y-1">
           <label htmlFor="password" className="text-sm font-medium">
-            كلمة المرور
+            {t("auth.password")}
           </label>
           <input
             id="password"
@@ -93,7 +95,7 @@ export function LoginForm() {
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          تسجيل الدخول
+          {t("auth.signIn")}
         </button>
       </form>
     </div>

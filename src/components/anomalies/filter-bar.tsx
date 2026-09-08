@@ -12,6 +12,7 @@ import {
   SEVERITY_LABELS_AR,
   STATUS_LABELS_AR,
 } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 const SEVERITIES: AnomalySeverity[] = [
   "CRITICAL",
@@ -37,6 +38,7 @@ const selectClass =
  * Zustand store; the feed reacts to store changes and refetches.
  */
 export function FilterBar() {
+  const { t } = useT();
   const filters = useUIStore((s) => s.filters);
   const setFilters = useUIStore((s) => s.setFilters);
   const resetFilters = useUIStore((s) => s.resetFilters);
@@ -45,7 +47,7 @@ export function FilterBar() {
     <div className="surface flex flex-wrap items-end gap-3 rounded-xl border p-4 print:hidden">
       <div className="flex min-w-[220px] flex-1 flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-search">
-          بحث
+          {t("anomalies.filter.search")}
         </label>
         <div className="relative">
           <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--muted))]" />
@@ -54,7 +56,7 @@ export function FilterBar() {
             type="search"
             value={filters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
-            placeholder="المرجع، الوصف، الطرف المقابل..."
+            placeholder={t("anomalies.filter.searchPlaceholder")}
             className={`${selectClass} w-full pr-9`}
           />
         </div>
@@ -62,7 +64,7 @@ export function FilterBar() {
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-sev">
-          الخطورة
+          {t("anomalies.filter.severity")}
         </label>
         <select
           id="f-sev"
@@ -72,7 +74,7 @@ export function FilterBar() {
           }
           className={selectClass}
         >
-          <option value="ALL">الكل</option>
+          <option value="ALL">{t("anomalies.filter.all")}</option>
           {SEVERITIES.map((s) => (
             <option key={s} value={s}>
               {SEVERITY_LABELS_AR[s]}
@@ -83,7 +85,7 @@ export function FilterBar() {
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-rule">
-          نوع القاعدة
+          {t("anomalies.filter.ruleType")}
         </label>
         <select
           id="f-rule"
@@ -93,7 +95,7 @@ export function FilterBar() {
           }
           className={selectClass}
         >
-          <option value="ALL">الكل</option>
+          <option value="ALL">{t("anomalies.filter.all")}</option>
           {RULES.map((r) => (
             <option key={r} value={r}>
               {RULE_LABELS_AR[r]}
@@ -104,7 +106,7 @@ export function FilterBar() {
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-status">
-          الحالة
+          {t("anomalies.filter.status")}
         </label>
         <select
           id="f-status"
@@ -114,7 +116,7 @@ export function FilterBar() {
           }
           className={selectClass}
         >
-          <option value="ALL">الكل</option>
+          <option value="ALL">{t("anomalies.filter.all")}</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>
               {STATUS_LABELS_AR[s]}
@@ -125,7 +127,7 @@ export function FilterBar() {
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-from">
-          من تاريخ
+          {t("anomalies.filter.fromDate")}
         </label>
         <input
           id="f-from"
@@ -138,7 +140,7 @@ export function FilterBar() {
 
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[rgb(var(--muted))]" htmlFor="f-to">
-          إلى تاريخ
+          {t("anomalies.filter.toDate")}
         </label>
         <input
           id="f-to"
@@ -155,7 +157,7 @@ export function FilterBar() {
         className="flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-sm text-[rgb(var(--muted))] hover:bg-black/5 dark:hover:bg-white/5"
       >
         <RotateCcw className="h-4 w-4" />
-        إعادة تعيين
+        {t("anomalies.filter.reset")}
       </button>
     </div>
   );

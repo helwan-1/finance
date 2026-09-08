@@ -1,3 +1,5 @@
+"use client";
+
 import {
   FileText,
   GitCompareArrows,
@@ -17,21 +19,40 @@ import {
   Ban,
   type LucideIcon,
 } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * In-app user guide — a static, Arabic-first walkthrough of every module,
  * ordered by the real audit workflow. Mirrors the standalone guide but styled
- * with the app's own design tokens so it reads as a native screen.
+ * with the app's own design tokens so it reads as a native screen. Bilingual:
+ * Arabic is the source of truth and the default; English mirrors it faithfully,
+ * selected by the active locale.
  */
 export function GuideView() {
+  const { locale } = useT();
+  const isEn = locale === "en";
+  const PIPELINE = isEn ? PIPELINE_EN : PIPELINE_AR;
+  const SECTIONS = isEn ? SECTIONS_EN : SECTIONS_AR;
+
   return (
     <div className="space-y-8">
       {/* Overview + pipeline */}
       <section className="surface rounded-xl border p-5 shadow-card">
         <p className="max-w-3xl text-sm leading-7 text-[rgb(var(--muted))]">
-          <b className="text-[rgb(var(--foreground))]">مدقّق مالي</b> نظامٌ حتمي بالكامل: كل نتيجة تُشتَقّ من قاعدة
-          أو اختبار مُعرَّف مسبقًا، وكل رقم قابل للتفسير وله أثر مرجعي — دون ذكاء اصطناعي. النظام متعدّد المكاتب
-          بعزل تام للبيانات، وكل إجراء يُسجَّل في سجلّ تدقيق غير قابل للتعديل. اتبع الخطوات أدناه بالترتيب.
+          {isEn ? (
+            <>
+              <b className="text-[rgb(var(--foreground))]">Financial Auditor</b> is a fully deterministic system:
+              every result is derived from a predefined rule or test, and every figure is explainable with a
+              traceable reference — no artificial intelligence involved. The system is multi-firm with complete data
+              isolation, and every action is recorded in an immutable audit log. Follow the steps below in order.
+            </>
+          ) : (
+            <>
+              <b className="text-[rgb(var(--foreground))]">مدقّق مالي</b> نظامٌ حتمي بالكامل: كل نتيجة تُشتَقّ من قاعدة
+              أو اختبار مُعرَّف مسبقًا، وكل رقم قابل للتفسير وله أثر مرجعي — دون ذكاء اصطناعي. النظام متعدّد المكاتب
+              بعزل تام للبيانات، وكل إجراء يُسجَّل في سجلّ تدقيق غير قابل للتعديل. اتبع الخطوات أدناه بالترتيب.
+            </>
+          )}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {PIPELINE.map((p, i) => (
@@ -90,7 +111,7 @@ interface Section {
   callouts?: Callout[];
 }
 
-const PIPELINE = [
+const PIPELINE_AR = [
   { href: "#documents", title: "المستندات", sub: "رفع واستيراد" },
   { href: "#reconciliation", title: "المطابقة", sub: "مطابقة بنكية" },
   { href: "#rules", title: "القواعد", sub: "محرّك حتمي" },
@@ -100,7 +121,17 @@ const PIPELINE = [
   { href: "#findings", title: "النتائج", sub: "G5 واعتماد" },
 ];
 
-const SECTIONS: Section[] = [
+const PIPELINE_EN = [
+  { href: "#documents", title: "Documents", sub: "Upload & import" },
+  { href: "#reconciliation", title: "Reconciliation", sub: "Bank matching" },
+  { href: "#rules", title: "Rules", sub: "Deterministic engine" },
+  { href: "#anomalies", title: "Anomalies", sub: "Audit board" },
+  { href: "#audit-tests", title: "Tests", sub: "G4" },
+  { href: "#runs", title: "Audit runs", sub: "Execution & metrics" },
+  { href: "#findings", title: "Findings", sub: "G5 & approval" },
+];
+
+const SECTIONS_AR: Section[] = [
   {
     id: "login",
     title: "الدخول والتنقّل",
@@ -343,6 +374,261 @@ const SECTIONS: Section[] = [
             <b>مسار عمل نموذجي كامل:</b> استورد دفتر الأستاذ والميزان والكشف ← شغّل القواعد وعالِج الحالات ← عرّف اختبارات
             G4 ← أنشئ عملية تدقيق واختمها وشغّلها ← افتح المؤشّرات ← وثّق النتائج واعتمدها بمُراجِع مختلف ← أغلق المسائل.
             كل خطوة مُسجَّلة في سجل التدقيق.
+          </>
+        ),
+      },
+    ],
+  },
+];
+
+const SECTIONS_EN: Section[] = [
+  {
+    id: "login",
+    title: "Sign in & navigation",
+    icon: LogIn,
+    tags: ["/login"],
+    desc: "Sign in with your account, then use the top bar to control the active engagement, language, and your profile, and the sidebar to move between modules.",
+    steps: [
+      <>Open the system — it redirects you automatically to the sign-in screen — and enter your email and password.</>,
+      <>In the top bar open the <Kbd>engagement switcher</Kbd> and choose an engagement — every screen follows the selected one.</>,
+      <>Switch between Arabic and English with the <Kbd>language switcher</Kbd>, and light/dark with the theme button.</>,
+    ],
+    callouts: [
+      {
+        kind: "tip",
+        text: (
+          <>
+            <b>Your permissions decide what you see.</b> Partners and managers hold administration and review; the
+            staff auditor does the field work without approving findings. To approve a finding, sign in with a
+            reviewer account different from the one that prepared it.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "documents",
+    title: "Documents & import",
+    icon: FileText,
+    tags: ["/documents"],
+    desc: "The data entry point: upload financial documents, import CSV files into auditable accounting data, and manage the imported datasets.",
+    steps: [
+      <>Choose the <b>data type</b> before importing: <Kbd>General ledger</Kbd> · <Kbd>Trial balance</Kbd> · <Kbd>Bank statement</Kbd> · <Kbd>Other</Kbd>.</>,
+      <>Click <Kbd>Import CSV</Kbd> and pick the file — the import runs in two stages: parse, then confirm.</>,
+      <>Review the accepted/rejected row counts and the rejection reasons, then <Kbd>Confirm import</Kbd>.</>,
+      <>The dataset appears in the <b>“Imported data”</b> list with its type and date; to delete a wrong dataset use the delete button.</>,
+    ],
+    elements: [
+      ["Data type list", "Determines how the file is interpreted and which columns it requires."],
+      ["Import CSV", "Accepts Arabic numerals and thousands separators, and strips the BOM header automatically."],
+      ["Imported data", "Each dataset with its type, date, and a delete button."],
+    ],
+    callouts: [
+      {
+        kind: "warn",
+        text: (
+          <>
+            <b>The general ledger needs core columns:</b> account code, entry date, and one amount field
+            (debit/credit/value). Importing with the wrong type will reject the rows — make sure the type matches
+            the file.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "reconciliation",
+    title: "Reconciliation",
+    icon: GitCompareArrows,
+    tags: ["/reconciliation"],
+    desc: "Match general-ledger transactions against the bank statement to surface unmatched items.",
+    steps: [
+      <>Make sure a <b>general ledger</b> and a <b>bank statement</b> are imported for the current engagement.</>,
+      <>Open <Kbd>Reconciliation</Kbd> and run the session, then review matched versus unmatched and resolve the differences.</>,
+    ],
+    callouts: [
+      { kind: "tip", text: <>Items that stay unmatched may show up under <b>Anomalies</b> as a signal of discrepancies worth following up.</> },
+    ],
+  },
+  {
+    id: "rules",
+    title: "Audit rules",
+    icon: Scale,
+    tags: ["/rules", "Deterministic engine"],
+    desc: "Define the rules the engine applies to transactions (split payments, round amounts, after-hours entries…), then run the audit to generate anomalies.",
+    steps: [
+      <>Browse the built-in rules or add a <b>custom rule</b> with its condition and severity.</>,
+      <>Click <Kbd>Run audit</Kbd> to apply the rules to the current engagement’s transactions.</>,
+      <>Go to <b>Anomalies</b> to review what was detected.</>,
+    ],
+    callouts: [
+      { kind: "tip", text: <>Every rule is deterministic and explainable: the result repeats on a re-run over the same data, and each case shows why it was flagged.</> },
+    ],
+  },
+  {
+    id: "anomalies",
+    title: "Anomalies (audit board)",
+    icon: ShieldAlert,
+    tags: ["/anomalies"],
+    desc: "A live monitoring board for every case the rules produced, with stat cards, filtering, export, resolution actions, and a full detail screen for each case.",
+    steps: [
+      <>Read the <b>top cards</b>: resolved · in progress · high severity · critical cases.</>,
+      <>Use the <b>filters</b> (search · severity · rule type · status · date range) to narrow the list.</>,
+      <>On any card click <Kbd>Details</Kbd> to view the rule, the evidence, the source transaction, and the resolution history.</>,
+      <>For open cases choose <Kbd>Resolve</Kbd>, <Kbd>Dismiss</Kbd>, or <Kbd>Escalate</Kbd> — from the card or the detail dialog.</>,
+      <>Export the list via <Kbd>Export PDF</Kbd> or <Kbd>Export Excel</Kbd> when needed.</>,
+    ],
+    callouts: [
+      {
+        kind: "tip",
+        text: <><b>The “Details” button is always available</b> — even for closed cases — to review their evidence and the record of who resolved them and when.</>,
+      },
+    ],
+  },
+  {
+    id: "audit-tests",
+    title: "Audit tests",
+    icon: FlaskConical,
+    tags: ["G4", "/audit-tests"],
+    desc: "The library of deterministic tests that run on the forensic accounting. Tests are defined at the firm level and shared across engagements, and each test has supported data types.",
+    steps: [
+      <>Click <Kbd>New test</Kbd> and choose a <b>test type</b> — the system fills in the code, name, and supported data types automatically.</>,
+      <>Check that the <b>required data type</b> matches what you will import for the engagement (e.g. duplicate trial-balance accounts requires a trial balance).</>,
+      <>Save the test so it becomes available to audit runs.</>,
+    ],
+    elements: [
+      ["Accounting integrity", "Unbalanced entries · invalid debit/credit · duplicate account in the trial balance."],
+      ["Data quality", "Statistical-population membership · source-to-forensic match."],
+      ["Statistical", "Round-number frequency · repeated amounts."],
+    ],
+    callouts: [
+      {
+        kind: "warn",
+        text: (
+          <>
+            Tests are shared at the firm level, but <b>the data and audit runs belong to each engagement</b>. Choosing
+            a test whose data is not available in the current engagement is blocked up front in the audit-runs screen.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "runs",
+    title: "Audit runs",
+    icon: Play,
+    tags: ["G4", "/runs"],
+    desc: "Execute the tests on a specific engagement’s data through a governed lifecycle that ends in a frozen set of metrics that never change — with an attempts log for every run.",
+    steps: [
+      <>Create a <b>new audit run</b> for the current engagement.</>,
+      <>Choose the imported <b>datasets</b> (each dataset shows its type and date to tell them apart).</>,
+      <>Select the <b>tests</b> — any test missing its data appears disabled with the reason it is blocked.</>,
+      <>Seal and publish the run, then follow the attempts log until the <Kbd>COMPLETED</Kbd> status.</>,
+      <>Open the results to view the <b>metrics</b>.</>,
+    ],
+    elements: [
+      ["Draft → prepare", "Create the run and select the data and tests."],
+      ["Seal", "Freezes the scope and transactions so nothing changes afterward."],
+      ["Publish → execute", "It enters the execution queue and the background worker processes it."],
+      ["Completed", "The final metrics appear with their evidence."],
+    ],
+    callouts: [
+      {
+        kind: "crit",
+        text: (
+          <>
+            If the run fails with <b>FAILED (CONFIG)</b>, open the <b>failure reason</b> in the attempts log — usually a
+            required data type that was not imported. Import the correct type or remove the unsupported test, then
+            re-run.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "audit-results",
+    title: "Audit metrics",
+    icon: ClipboardList,
+    tags: ["/audit-results"],
+    desc: "The results of the executed tests — each metric with its evidence and source cells (the entry or trial-balance row it was built on) — the basis for opening an audit issue.",
+    steps: [
+      <>Open any metric to expand its <b>details</b> and review the <b>source cells</b>.</>,
+      <>When something is worth documenting, link the metric to an <b>audit issue</b> in the findings module.</>,
+    ],
+  },
+  {
+    id: "findings",
+    title: "Audit findings (G5)",
+    icon: Gavel,
+    tags: ["G5", "/findings"],
+    desc: "Document issues, their findings, and their approval within a strict review cycle that enforces segregation of duties. An issue groups the metrics, and beneath it findings move through approved stages.",
+    steps: [
+      <>Create an <b>audit issue</b> and link the relevant metrics to it.</>,
+      <>Add a <b>finding</b> (status, criteria, cause, effect, conclusion, recommendation). The amount and its currency are entered together.</>,
+      <>Click <Kbd>Submit for review</Kbd> and the finding becomes <b>under review</b>.</>,
+      <>With a <b>different reviewer</b> account click <Kbd>Approve</Kbd> and it becomes <b>approved</b> — or <Kbd>Return</Kbd> with a note.</>,
+      <>Close the issue via <Kbd>Close with finding</Kbd> (requires an approved finding) or <Kbd>Close without finding</Kbd>.</>,
+    ],
+    callouts: [
+      {
+        kind: "crit",
+        text: (
+          <>
+            <b>Segregation of duties (intended behavior):</b> the preparer of a finding cannot approve it. If you see
+            “the reviewer must differ from the preparer,” sign in with another reviewer account. If you see “not a
+            member of the engagement,” add them first from <b>Engagement members</b>.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "members",
+    title: "Engagement members",
+    icon: Users,
+    tags: ["From the engagement switcher"],
+    desc: "Manage who can prepare, review, and approve within each engagement — ensuring a qualified reviewer is available to enforce segregation of duties without any manual intervention.",
+    steps: [
+      <>Sign in with an account that has administration permission (partner / engagement manager).</>,
+      <>From the <b>engagement switcher</b> choose the engagement, then open <Kbd>Engagement members</Kbd>.</>,
+      <>From the <b>“Add member”</b> list pick the user, then <Kbd>Add</Kbd> — they appear among the current members.</>,
+      <>To remove a member use the delete button (you cannot remove the last member of an engagement).</>,
+    ],
+    callouts: [
+      { kind: "tip", text: <>The engagement’s creator is added as a member automatically. Add the reviewer manually, since that choice is a professional decision for the firm.</> },
+    ],
+  },
+  {
+    id: "analytics",
+    title: "Analytics",
+    icon: BarChart3,
+    tags: ["/analytics"],
+    desc: "An aggregate view of the engagement’s metrics and status (including Benford’s Law analysis) to read the overall picture and track progress.",
+    steps: [<>Open <Kbd>Analytics</Kbd> after running the audit or the audit runs, and review the distributions to identify areas to focus on.</>],
+  },
+  {
+    id: "audit-log",
+    title: "Audit log",
+    icon: ScrollText,
+    tags: ["/audit-log", "Immutable"],
+    desc: "A chronological record of every sensitive action in the system (resolving a case, approving a finding…) — never edited or deleted, and the line of defense for accountability.",
+    steps: [<>Open the <Kbd>Audit log</Kbd> to view the most recent events first: actor, action, entity, and time.</>],
+  },
+  {
+    id: "settings",
+    title: "Settings",
+    icon: Settings,
+    tags: ["/settings"],
+    desc: "Display and account preferences at the user and firm level (language and theme are also available from the top bar on every screen).",
+    callouts: [
+      {
+        kind: "tip",
+        text: (
+          <>
+            <b>A complete typical workflow:</b> import the ledger, trial balance, and statement → run the rules and
+            resolve the cases → define the G4 tests → create an audit run, seal it, and run it → open the metrics →
+            document the findings and approve them with a different reviewer → close the issues. Every step is
+            recorded in the audit log.
           </>
         ),
       },

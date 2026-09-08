@@ -1,6 +1,7 @@
 "use client";
 
 import { useLiveUpdates } from "@/hooks/use-live-updates";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * Small "live" badge in the header. Mounting it also activates the SSE
@@ -8,12 +9,13 @@ import { useLiveUpdates } from "@/hooks/use-live-updates";
  * time. Hidden on print.
  */
 export function LiveIndicator() {
+  const { t } = useT();
   const { connected } = useLiveUpdates();
 
   return (
     <span
       className="hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium sm:flex print:hidden"
-      title={connected ? "التحديثات المباشرة نشطة" : "غير متصل"}
+      title={connected ? t("layout.liveActiveTitle") : t("layout.offline")}
     >
       <span
         className={`h-2 w-2 rounded-full ${
@@ -23,7 +25,7 @@ export function LiveIndicator() {
         }`}
       />
       <span className="text-[rgb(var(--muted))]">
-        {connected ? "مباشر" : "غير متصل"}
+        {connected ? t("layout.live") : t("layout.offline")}
       </span>
     </span>
   );

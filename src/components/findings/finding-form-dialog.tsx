@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 import type {
   FindingCategoriesResponse,
   FindingContentDTO,
@@ -15,13 +17,13 @@ const primaryBtn =
   "rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60";
 const secondaryBtn = "rounded-lg border px-4 py-2 text-sm";
 
-const FIELDS: { key: keyof FindingContentDTO; labelAr: string; rows?: number }[] = [
-  { key: "condition", labelAr: "الحالة (ما لوحظ)", rows: 2 },
-  { key: "criteria", labelAr: "المعيار (ما يجب أن يكون)", rows: 2 },
-  { key: "cause", labelAr: "السبب", rows: 2 },
-  { key: "effect", labelAr: "الأثر", rows: 2 },
-  { key: "auditorConclusion", labelAr: "استنتاج المدقق", rows: 2 },
-  { key: "recommendation", labelAr: "التوصية", rows: 2 },
+const FIELDS: { key: keyof FindingContentDTO; labelKey: MessageKey; rows?: number }[] = [
+  { key: "condition", labelKey: "findings.form.condition", rows: 2 },
+  { key: "criteria", labelKey: "findings.form.criteria", rows: 2 },
+  { key: "cause", labelKey: "findings.form.cause", rows: 2 },
+  { key: "effect", labelKey: "findings.form.effect", rows: 2 },
+  { key: "auditorConclusion", labelKey: "findings.form.conclusion", rows: 2 },
+  { key: "recommendation", labelKey: "findings.form.recommendation", rows: 2 },
 ];
 
 async function fetchCategories(): Promise<FindingCategoriesResponse> {
@@ -61,6 +63,7 @@ export function FindingFormDialog({
   initial?: FindingVersionDTO | null;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [content, setContent] = useState<FindingContentDTO>(() => {
     if (initial) {
@@ -108,7 +111,7 @@ export function FindingFormDialog({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "فشل حفظ نتيجة التدقيق");
+        throw new Error(body.error || t("findings.form.saveError"));
       }
     },
     onSuccess: async () => {
@@ -116,7 +119,7 @@ export function FindingFormDialog({
       await queryClient.invalidateQueries({ queryKey: ["exceptions"] });
       onClose();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "فشل حفظ نتيجة التدقيق"),
+    onError: (e) => setError(e instanceof Error ? e.message : t("findings.form.saveError")),
   });
 
   const canSubmit =
@@ -144,22 +147,22 @@ export function FindingFormDialog({
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold">
-            {mode === "create" ? "نتيجة تدقيق جديدة" : "تعديل نتيجة التدقيق (نسخة جديدة)"}
+            {mode === "create" ? t("findings.form.titleCreate") : t("findings.form.titleRevise")}
           </h2>
-          <button type="button" onClick={onClose} aria-label="إغلاق">
+          <button type="button" onClick={onClose} aria-label={t("findings.close")}>
             <X className="h-5 w-5 text-[rgb(var(--muted))]" />
           </button>
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">الفئة</label>
+          <label className="text-sm font-medium">{t("findings.form.category")}</label>
           <select
             className={input}
             value={content.category}
             onChange={(e) => set("category", e.target.value)}
             required
           >
-            <option value="">— اختر الفئة —</option>
+            <option value="">{t("findings.form.selectCategory")}</option>
             {categories.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.labelAr}
@@ -170,7 +173,7 @@ export function FindingFormDialog({
 
         {FIELDS.map((f) => (
           <div key={f.key} className="space-y-1">
-            <label className="text-sm font-medium">{f.labelAr}</label>
+            <label className="text-sm font-medium">{t(f.labelKey)}</label>
             <textarea
               className={input}
               rows={f.rows ?? 2}
@@ -182,7 +185,7 @@ export function FindingFormDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-sm font-medium">المبلغ المرصود</label>
+            <label className="text-sm font-medium">{t("findings.form.observedAmount")}</label>
             <input
               className={input}
               value={content.observedAmount ?? ""}
@@ -192,7 +195,7 @@ export function FindingFormDialog({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">العملة</label>
+            <label className="text-sm font-medium">{t("findings.form.currency")}</label>
             <input
               className={input}
               value={content.observedCurrency ?? ""}
@@ -201,7 +204,7 @@ export function FindingFormDialog({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">التعرّض المقدَّر</label>
+            <label className="text-sm font-medium">{t("findings.form.estimatedExposure")}</label>
             <input
               className={input}
               value={content.estimatedExposureAmount ?? ""}
@@ -211,7 +214,7 @@ export function FindingFormDialog({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">العملة</label>
+            <label className="text-sm font-medium">{t("findings.form.currency")}</label>
             <input
               className={input}
               value={content.estimatedExposureCurrency ?? ""}
@@ -225,10 +228,10 @@ export function FindingFormDialog({
 
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" className={secondaryBtn} onClick={onClose}>
-            إلغاء
+            {t("findings.cancel")}
           </button>
           <button type="submit" className={primaryBtn} disabled={!canSubmit}>
-            {mutation.isPending ? "جارٍ الحفظ…" : "حفظ"}
+            {mutation.isPending ? t("findings.form.saving") : t("findings.form.save")}
           </button>
         </div>
       </form>

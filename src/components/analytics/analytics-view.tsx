@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, ServerCrash, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { AnalyticsResponse } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 import { BenfordChart } from "./benford-chart";
 
 async function fetchAnalytics(
@@ -17,6 +18,7 @@ async function fetchAnalytics(
 }
 
 export function AnalyticsView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const { data, isPending, isError } = useQuery({
     queryKey: ["analytics", engagementId],
@@ -27,7 +29,7 @@ export function AnalyticsView() {
     return (
       <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <Loader2 className="h-5 w-5 animate-spin" />
-        جارٍ حساب توزيع بنفورد...
+        {t("analytics.loading")}
       </div>
     );
   }
@@ -36,7 +38,7 @@ export function AnalyticsView() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-severity-critical">
         <ServerCrash className="h-6 w-6" />
-        تعذّر تحميل البيانات.
+        {t("analytics.error.generic")}
       </div>
     );
   }
@@ -67,22 +69,25 @@ export function AnalyticsView() {
         <div>
           <h2 className="font-semibold">
             {rejects
-              ? "انحراف دال عن قانون بنفورد"
-              : "التوزيع متوافق مع قانون بنفورد"}
+              ? t("analytics.verdict.reject")
+              : t("analytics.verdict.ok")}
           </h2>
           <p className="mt-0.5 text-sm text-[rgb(var(--muted))]">
-            مربع كاي = {data.chiSquare} مقابل القيمة الحرجة {data.criticalValue}{" "}
-            (ثقة 95%، درجات حرية 8) — حجم العينة {data.sampleSize}.
+            {t("analytics.benford.stats", {
+              chiSquare: data.chiSquare,
+              criticalValue: data.criticalValue,
+              sampleSize: data.sampleSize,
+            })}
             {rejects
-              ? " يُنصح بمراجعة تفصيلية للقيود."
-              : " لا يوجد مؤشر إحصائي على تلاعب في الأرقام."}
+              ? t("analytics.benford.adviceReview")
+              : t("analytics.benford.adviceOk")}
           </p>
         </div>
       </div>
 
       {/* Chart */}
       <div className="surface rounded-xl border p-4 shadow-card">
-        <h3 className="mb-3 font-semibold">توزيع الرقم الأول</h3>
+        <h3 className="mb-3 font-semibold">{t("analytics.firstDigit.title")}</h3>
         <BenfordChart digits={data.digits} />
       </div>
     </div>

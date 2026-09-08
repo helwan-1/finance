@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, FileText } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 import {
   FINDING_STATUS_BADGE,
   FINDING_STATUS_LABELS_AR,
@@ -39,6 +40,7 @@ export function ExceptionDetail({
   exceptionId: string;
   engagementId: string;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [showNewFinding, setShowNewFinding] = useState(false);
   const [reviseTarget, setReviseTarget] = useState<FindingDTO | null>(null);
@@ -62,11 +64,11 @@ export function ExceptionDetail({
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error || "فشل تنفيذ العملية");
+        throw new Error(b.error || t("findings.action.failed"));
       }
     },
     onSuccess: invalidate,
-    onError: (e) => alert(e instanceof Error ? e.message : "فشل تنفيذ العملية"),
+    onError: (e) => alert(e instanceof Error ? e.message : t("findings.action.failed")),
   });
 
   const findingAction = useMutation({
@@ -84,18 +86,18 @@ export function ExceptionDetail({
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error || "فشل تنفيذ العملية");
+        throw new Error(b.error || t("findings.action.failed"));
       }
     },
     onSuccess: invalidate,
-    onError: (e) => alert(e instanceof Error ? e.message : "فشل تنفيذ العملية"),
+    onError: (e) => alert(e instanceof Error ? e.message : t("findings.action.failed")),
   });
 
   if (isPending) {
-    return <p className="text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p>;
+    return <p className="text-sm text-[rgb(var(--muted))]">{t("findings.loading")}</p>;
   }
   if (isError || !data) {
-    return <p className="text-sm text-severity-critical">تعذّر تحميل التفاصيل.</p>;
+    return <p className="text-sm text-severity-critical">{t("findings.detail.loadFailed")}</p>;
   }
 
   const ex: ExceptionDetailDTO = data.exception;
@@ -110,7 +112,7 @@ export function ExceptionDetail({
 
       {ex.linkedResultIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[rgb(var(--muted))]">المؤشّرات المرتبطة:</span>
+          <span className="text-xs text-[rgb(var(--muted))]">{t("findings.detail.linkedResults")}</span>
           {ex.linkedResultIds.map((id) => (
             <span
               key={id}
@@ -130,27 +132,27 @@ export function ExceptionDetail({
               type="button"
               className={btn}
               disabled={exceptionAction.isPending || !ex.findings.some((f) => f.status === "CONCLUDED")}
-              title={ex.findings.some((f) => f.status === "CONCLUDED") ? undefined : "يتطلب نتيجة تدقيق معتمَدة أولاً (أضف نتيجة ← أرسل للمراجعة ← اعتمِدها)"}
+              title={ex.findings.some((f) => f.status === "CONCLUDED") ? undefined : t("findings.detail.concludeHint")}
               onClick={() => {
-                if (window.confirm("اعتماد إغلاق المسألة مع نتيجة تدقيق؟ يتطلب وجود نتيجة تدقيق معتمدة.")) {
+                if (window.confirm(t("findings.detail.concludeConfirm"))) {
                   exceptionAction.mutate({ action: "CONCLUDE" });
                 }
               }}
             >
-              إغلاق مع نتيجة تدقيق
+              {t("findings.detail.concludeBtn")}
             </button>
             <button
               type="button"
               className={btnDanger}
               disabled={exceptionAction.isPending}
               onClick={() => {
-                const rationale = window.prompt("سبب الإغلاق دون نتيجة تدقيق:");
+                const rationale = window.prompt(t("findings.detail.dismissPrompt"));
                 if (rationale && rationale.trim()) {
                   exceptionAction.mutate({ action: "DISMISS", rationale: rationale.trim() });
                 }
               }}
             >
-              إغلاق دون نتيجة تدقيق
+              {t("findings.detail.dismissBtn")}
             </button>
           </>
         )}
@@ -160,13 +162,13 @@ export function ExceptionDetail({
             className={btn}
             disabled={exceptionAction.isPending}
             onClick={() => {
-              const reason = window.prompt("سبب إعادة الفتح:");
+              const reason = window.prompt(t("findings.detail.reopenPrompt"));
               if (reason && reason.trim()) {
                 exceptionAction.mutate({ action: "REOPEN", reason: reason.trim() });
               }
             }}
           >
-            إعادة الفتح
+            {t("findings.detail.reopenBtn")}
           </button>
         )}
       </div>
@@ -174,15 +176,15 @@ export function ExceptionDetail({
       {/* Findings */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold">نتائج التدقيق ({ex.findings.length})</h3>
+          <h3 className="text-sm font-bold">{t("findings.detail.findingsHeading", { count: ex.findings.length })}</h3>
           <button type="button" className={btnBrand} onClick={() => setShowNewFinding(true)}>
             <Plus className="h-3.5 w-3.5" />
-            إضافة نتيجة تدقيق
+            {t("findings.detail.addFinding")}
           </button>
         </div>
 
         {ex.findings.length === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">لا توجد نتائج تدقيق بعد.</p>
+          <p className="text-sm text-[rgb(var(--muted))]">{t("findings.detail.noFindings")}</p>
         ) : (
           ex.findings.map((f) => (
             <FindingBlock
@@ -191,13 +193,13 @@ export function ExceptionDetail({
               busy={findingAction.isPending}
               onRevise={() => setReviseTarget(f)}
               onSubmit={() => {
-                if (window.confirm("إرسال نتيجة التدقيق للمراجعة؟")) {
+                if (window.confirm(t("findings.detail.submitConfirm"))) {
                   findingAction.mutate({ findingId: f.id, payload: { action: "SUBMIT" } });
                 }
               }}
               onApprove={() => {
                 if (!f.currentVersionId) return;
-                if (window.confirm("اعتماد نتيجة التدقيق؟")) {
+                if (window.confirm(t("findings.detail.approveConfirm"))) {
                   findingAction.mutate({
                     findingId: f.id,
                     payload: {
@@ -210,7 +212,7 @@ export function ExceptionDetail({
               }}
               onReturn={() => {
                 if (!f.currentVersionId) return;
-                const note = window.prompt("ملاحظة الإرجاع (اختياري):") ?? undefined;
+                const note = window.prompt(t("findings.detail.returnPrompt")) ?? undefined;
                 findingAction.mutate({
                   findingId: f.id,
                   payload: {
@@ -273,6 +275,7 @@ function FindingBlock({
   onApprove: () => void;
   onReturn: () => void;
 }) {
+  const { t } = useT();
   const v: FindingVersionDTO | null = finding.currentVersion;
   const isDraft = finding.status === "DRAFT";
   const inReview = finding.status === "IN_REVIEW";
@@ -287,18 +290,18 @@ function FindingBlock({
           {FINDING_STATUS_LABELS_AR[finding.status]}
         </span>
         {v && (
-          <span className="text-[11px] text-[rgb(var(--muted))]">نسخة {v.versionNo}</span>
+          <span className="text-[11px] text-[rgb(var(--muted))]">{t("findings.detail.version", { n: v.versionNo })}</span>
         )}
       </div>
 
       {v && (
         <div className="space-y-1.5">
-          <Row labelAr="الحالة" value={v.condition} />
-          <Row labelAr="المعيار" value={v.criteria} />
-          <Row labelAr="السبب" value={v.cause} />
-          <Row labelAr="الأثر" value={v.effect} />
-          <Row labelAr="الاستنتاج" value={v.auditorConclusion} />
-          <Row labelAr="التوصية" value={v.recommendation} />
+          <Row labelAr={t("findings.field.condition")} value={v.condition} />
+          <Row labelAr={t("findings.field.criteria")} value={v.criteria} />
+          <Row labelAr={t("findings.field.cause")} value={v.cause} />
+          <Row labelAr={t("findings.field.effect")} value={v.effect} />
+          <Row labelAr={t("findings.field.conclusion")} value={v.auditorConclusion} />
+          <Row labelAr={t("findings.field.recommendation")} value={v.recommendation} />
         </div>
       )}
 
@@ -306,20 +309,20 @@ function FindingBlock({
         {isDraft && (
           <>
             <button type="button" className={btn} disabled={busy} onClick={onRevise}>
-              تعديل
+              {t("findings.finding.edit")}
             </button>
             <button type="button" className={btnBrand} disabled={busy} onClick={onSubmit}>
-              إرسال للمراجعة
+              {t("findings.finding.submit")}
             </button>
           </>
         )}
         {inReview && (
           <>
             <button type="button" className={btnBrand} disabled={busy} onClick={onApprove}>
-              اعتماد
+              {t("findings.finding.approve")}
             </button>
             <button type="button" className={btn} disabled={busy} onClick={onReturn}>
-              إرجاع
+              {t("findings.finding.return")}
             </button>
           </>
         )}

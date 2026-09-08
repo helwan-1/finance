@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Plus, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 import {
   SEVERITY_LABELS_AR,
   SEVERITY_BADGE,
@@ -34,8 +36,8 @@ const ACTIONS: DispositionActionKind[] = [
   "MARK_FALSE_POSITIVE",
 ];
 
-const STATE_FILTER: { value: string; labelAr: string }[] = [
-  { value: "ALL", labelAr: "كل الحالات" },
+const STATE_FILTER: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
+  { value: "ALL", labelKey: "auditResults.allStates" },
   { value: "UNREVIEWED", labelAr: DISPOSITION_STATE_LABELS_AR.UNREVIEWED },
   { value: "UNDER_REVIEW", labelAr: DISPOSITION_STATE_LABELS_AR.UNDER_REVIEW },
   { value: "INVESTIGATING", labelAr: DISPOSITION_STATE_LABELS_AR.INVESTIGATING },
@@ -73,6 +75,7 @@ async function fetchResultDetail(id: string): Promise<ResultDetailDTO> {
 }
 
 export function AuditResultsView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const [stateFilter, setStateFilter] = useState("ALL");
@@ -93,11 +96,11 @@ export function AuditResultsView() {
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error || "فشل تسجيل الحكم");
+        throw new Error(b.error || t("auditResults.dispositionError"));
       }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["audit-results"] }),
-    onError: (e) => alert(e instanceof Error ? e.message : "فشل تسجيل الحكم"),
+    onError: (e) => alert(e instanceof Error ? e.message : t("auditResults.dispositionError")),
   });
 
   const all = data?.results ?? [];
@@ -111,25 +114,25 @@ export function AuditResultsView() {
           className={selectClass}
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
-          aria-label="تصفية حسب الحالة"
+          aria-label={t("auditResults.filterByState")}
         >
           {STATE_FILTER.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.labelAr}
+              {o.labelKey ? t(o.labelKey) : o.labelAr}
             </option>
           ))}
         </select>
-        <span className="text-sm text-[rgb(var(--muted))]">{results.length} مؤشّر</span>
+        <span className="text-sm text-[rgb(var(--muted))]">{t("auditResults.resultCount", { count: results.length })}</span>
       </div>
 
       {!engagementId ? (
-        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض المؤشّرات." />
+        <EmptyCard text={t("auditResults.selectEngagement")} />
       ) : isPending ? (
-        <EmptyCard text="جارٍ التحميل…" />
+        <EmptyCard text={t("auditResults.loading")} />
       ) : isError ? (
-        <EmptyCard text="تعذّر تحميل البيانات. حاول مرة أخرى." tone="error" />
+        <EmptyCard text={t("auditResults.loadFailed")} tone="error" />
       ) : results.length === 0 ? (
-        <EmptyCard text="لا توجد مؤشّرات تدقيق مطابقة. شغّل محرّك التدقيق (G4) لإنتاج مؤشّرات." />
+        <EmptyCard text={t("auditResults.noResults")} />
       ) : (
         <div className="space-y-3">
           {results.map((r) => (
@@ -167,6 +170,7 @@ function ResultRow({
   onDisposition: (action: DispositionActionKind) => void;
   onCreateException: () => void;
 }) {
+  const { t } = useT();
   const state = r.dispositionState as DispositionStateKind;
   const stateLabel = DISPOSITION_STATE_LABELS_AR[state] ?? r.dispositionState;
   const stateBadge =
@@ -187,15 +191,15 @@ function ResultRow({
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"
-          aria-label={open ? "إخفاء التفاصيل" : "عرض التفاصيل"}
-          title={open ? "إخفاء التفاصيل" : "عرض التفاصيل"}
+          aria-label={open ? t("auditResults.hideDetails") : t("auditResults.showDetails")}
+          title={open ? t("auditResults.hideDetails") : t("auditResults.showDetails")}
         >
           <ClipboardList className="h-5 w-5 text-brand-600" />
         </button>
         <button type="button" onClick={() => setOpen((v) => !v)} className="min-w-0 flex-1 text-right">
           <p className="truncate font-semibold">{r.resultCode}</p>
           <p className="text-xs text-[rgb(var(--muted))]">
-            {r.resultKind} · درجة {r.score}
+            {r.resultKind} · {t("auditResults.row.score", { score: r.score })}
           </p>
         </button>
         <span
@@ -216,7 +220,7 @@ function ResultRow({
             className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
           >
             {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            التفاصيل
+            {t("auditResults.details")}
           </button>
           <select
             className={smallSelect}
@@ -227,9 +231,9 @@ function ResultRow({
               if (v) onDisposition(v);
               e.target.value = "";
             }}
-            aria-label="تسجيل حكم"
+            aria-label={t("auditResults.recordJudgment")}
           >
-            <option value="">— حكم —</option>
+            <option value="">{t("auditResults.judgmentPlaceholder")}</option>
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
                 {DISPOSITION_ACTION_LABELS_AR[a]}
@@ -241,10 +245,10 @@ function ResultRow({
             className={btnBrand}
             onClick={onCreateException}
             disabled={busy || linked}
-            title={linked ? "مرتبطة بمسألة تدقيق بالفعل" : undefined}
+            title={linked ? t("auditResults.alreadyLinked") : undefined}
           >
             <Plus className="h-3.5 w-3.5" />
-            فتح مسألة تدقيق
+            {t("auditResults.openMatter")}
           </button>
         </div>
       </div>
@@ -252,26 +256,26 @@ function ResultRow({
       {open && (
         <div className="border-t p-4 text-sm">
           <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--muted))]">
-            <span>النوع: {r.resultKind}</span>
-            <span>الخطورة: {SEVERITY_LABELS_AR[r.severity]}</span>
-            <span>الدرجة: {r.score}</span>
+            <span>{t("auditResults.detail.type", { kind: r.resultKind })}</span>
+            <span>{t("auditResults.detail.severity", { severity: SEVERITY_LABELS_AR[r.severity] })}</span>
+            <span>{t("auditResults.detail.score", { score: r.score })}</span>
             {detail.data?.resultSemanticFingerprint && (
-              <span className="font-mono">البصمة: {detail.data.resultSemanticFingerprint.slice(0, 16)}…</span>
+              <span className="font-mono">{t("auditResults.detail.fingerprint", { fp: detail.data.resultSemanticFingerprint.slice(0, 16) })}</span>
             )}
           </div>
           {detail.isPending ? (
-            <p className="flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-4 w-4 animate-spin" />جارٍ تحميل الدليل…</p>
+            <p className="flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-4 w-4 animate-spin" />{t("auditResults.detail.loadingEvidence")}</p>
           ) : detail.isError ? (
-            <p className="text-severity-critical">تعذّر تحميل التفاصيل.</p>
+            <p className="text-severity-critical">{t("auditResults.detail.loadFailed")}</p>
           ) : (detail.data?.evidence.length ?? 0) === 0 ? (
-            <p className="text-[rgb(var(--muted))]">لا يوجد دليل مرتبط بهذا المؤشّر.</p>
+            <p className="text-[rgb(var(--muted))]">{t("auditResults.detail.noEvidence")}</p>
           ) : (
             <div className="space-y-3">
-              <p className="font-medium">الدليل — السجلات المصدرية ({detail.data!.evidence.length})</p>
+              <p className="font-medium">{t("auditResults.detail.evidenceHeading", { count: detail.data!.evidence.length })}</p>
               {detail.data!.evidence.map((e, i) => (
                 <div key={i} className="rounded-lg border p-3">
                   <p className="mb-1 text-xs text-[rgb(var(--muted))]">
-                    {e.evidenceType}{e.role ? ` · ${e.role}` : ""}{e.sourceRowNo != null ? ` · صف ${e.sourceRowNo}` : ""}
+                    {e.evidenceType}{e.role ? ` · ${e.role}` : ""}{e.sourceRowNo != null ? ` · ${t("auditResults.detail.row", { n: e.sourceRowNo })}` : ""}
                   </p>
                   {e.cells && e.cells.length > 0 ? (
                     <div className="overflow-x-auto">
@@ -287,7 +291,7 @@ function ResultRow({
                       </table>
                     </div>
                   ) : (
-                    <p className="text-xs text-[rgb(var(--muted))]">لا تتوفّر خلايا مصدرية لهذا الدليل.</p>
+                    <p className="text-xs text-[rgb(var(--muted))]">{t("auditResults.detail.noCells")}</p>
                   )}
                 </div>
               ))}

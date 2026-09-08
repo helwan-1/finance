@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 import { SEVERITY_LABELS_AR } from "@/lib/labels";
 import type {
   AuditResultsResponse,
@@ -33,6 +34,7 @@ export function NewExceptionDialog({
   presetResultId?: string;
   presetResultLabel?: string;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [firstResultId, setFirstResultId] = useState(presetResultId ?? "");
   const [title, setTitle] = useState("");
@@ -65,7 +67,7 @@ export function NewExceptionDialog({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "فشل فتح مسألة التدقيق");
+        throw new Error(body.error || t("findings.newException.openError"));
       }
     },
     onSuccess: async () => {
@@ -73,7 +75,7 @@ export function NewExceptionDialog({
       await queryClient.invalidateQueries({ queryKey: ["audit-results"] });
       onClose();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "فشل فتح مسألة التدقيق"),
+    onError: (e) => setError(e instanceof Error ? e.message : t("findings.newException.openError")),
   });
 
   const canSubmit = Boolean(firstResultId) && Boolean(title || titleAr) && !mutation.isPending;
@@ -93,17 +95,17 @@ export function NewExceptionDialog({
         className="surface max-h-[85vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border p-5 shadow-card"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">فتح مسألة تدقيق</h2>
-          <button type="button" onClick={onClose} aria-label="إغلاق">
+          <h2 className="text-lg font-bold">{t("findings.newException.title")}</h2>
+          <button type="button" onClick={onClose} aria-label={t("findings.close")}>
             <X className="h-5 w-5 text-[rgb(var(--muted))]" />
           </button>
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">المؤشّر المصدر</label>
+          <label className="text-sm font-medium">{t("findings.newException.sourceResult")}</label>
           {!presetResultId && (
             <p className="text-xs text-[rgb(var(--muted))]">
-              كل مسألة تدقيق تبدأ من مؤشّر. يمكنك أيضًا فتح المسألة مباشرةً من شاشة «مؤشّرات التدقيق» على المؤشّر المحدّد.
+              {t("findings.newException.hint")}
             </p>
           )}
           {presetResultId ? (
@@ -111,11 +113,10 @@ export function NewExceptionDialog({
               {presetResultLabel ?? presetResultId}
             </p>
           ) : isPending ? (
-            <p className="text-sm text-[rgb(var(--muted))]">جارٍ تحميل المؤشّرات…</p>
+            <p className="text-sm text-[rgb(var(--muted))]">{t("findings.newException.loadingResults")}</p>
           ) : results.length === 0 ? (
             <p className="rounded-lg border p-3 text-sm text-[rgb(var(--muted))]">
-              لا توجد مؤشّرات تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4)
-              لإنتاج مؤشّرات يمكن فتح مسألة تدقيق منها.
+              {t("findings.newException.noResults")}
             </p>
           ) : (
             <select
@@ -124,7 +125,7 @@ export function NewExceptionDialog({
               onChange={(e) => setFirstResultId(e.target.value)}
               required
             >
-              <option value="">— اختر مؤشّرًا —</option>
+              <option value="">{t("findings.newException.selectResult")}</option>
               {results.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.resultCode} · {SEVERITY_LABELS_AR[r.severity]} · {r.dispositionState}
@@ -135,17 +136,17 @@ export function NewExceptionDialog({
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">العنوان (عربي)</label>
+          <label className="text-sm font-medium">{t("findings.newException.titleAr")}</label>
           <input
             className={input}
             value={titleAr}
             onChange={(e) => setTitleAr(e.target.value)}
-            placeholder="عنوان المسألة"
+            placeholder={t("findings.newException.titlePlaceholder")}
           />
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">العنوان (إنجليزي)</label>
+          <label className="text-sm font-medium">{t("findings.newException.titleEn")}</label>
           <input
             className={input}
             value={title}
@@ -155,7 +156,7 @@ export function NewExceptionDialog({
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">الوصف</label>
+          <label className="text-sm font-medium">{t("findings.newException.description")}</label>
           <textarea
             className={input}
             rows={3}
@@ -165,15 +166,15 @@ export function NewExceptionDialog({
         </div>
 
         <div className="space-y-1">
-          <label className="text-sm font-medium">الأولوية</label>
+          <label className="text-sm font-medium">{t("findings.newException.priority")}</label>
           <select
             className={input}
             value={priority}
             onChange={(e) => setPriority(e.target.value as MatterPriority)}
           >
-            <option value="LOW">منخفضة</option>
-            <option value="MEDIUM">متوسطة</option>
-            <option value="HIGH">عالية</option>
+            <option value="LOW">{t("findings.priority.low")}</option>
+            <option value="MEDIUM">{t("findings.priority.medium")}</option>
+            <option value="HIGH">{t("findings.priority.high")}</option>
           </select>
         </div>
 
@@ -181,10 +182,10 @@ export function NewExceptionDialog({
 
         <div className="flex justify-end gap-2">
           <button type="button" className={secondaryBtn} onClick={onClose}>
-            إلغاء
+            {t("findings.cancel")}
           </button>
           <button type="submit" className={primaryBtn} disabled={!canSubmit}>
-            {mutation.isPending ? "جارٍ الإنشاء…" : "إنشاء"}
+            {mutation.isPending ? t("findings.newException.creating") : t("findings.newException.create")}
           </button>
         </div>
       </form>

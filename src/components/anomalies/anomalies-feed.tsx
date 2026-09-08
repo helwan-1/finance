@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, ShieldCheck, ServerCrash } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
 import type { AnomaliesResponse, AnomalyFilters } from "@/lib/ui-types";
 import { AnomalyCard } from "./anomaly-card";
 
@@ -29,6 +30,7 @@ async function fetchAnomalies(
 }
 
 export function AnomaliesFeed() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const filters = useUIStore((s) => s.filters);
 
@@ -41,7 +43,7 @@ export function AnomaliesFeed() {
     return (
       <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <Loader2 className="h-5 w-5 animate-spin" />
-        جارٍ تحميل الحالات الشاذة...
+        {t("anomalies.feed.loading")}
       </div>
     );
   }
@@ -50,7 +52,7 @@ export function AnomaliesFeed() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-severity-critical">
         <ServerCrash className="h-6 w-6" />
-        تعذّر تحميل البيانات. حاول مرة أخرى.
+        {t("anomalies.feed.error")}
       </div>
     );
   }
@@ -59,7 +61,7 @@ export function AnomaliesFeed() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <ShieldCheck className="h-7 w-7 text-severity-low" />
-        لا توجد حالات شاذة مطابقة للمرشحات الحالية.
+        {t("anomalies.feed.empty")}
       </div>
     );
   }
@@ -67,7 +69,7 @@ export function AnomaliesFeed() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-[rgb(var(--muted))]">
-        {data.total} حالة شاذة
+        {t("anomalies.feed.count", { count: data.total })}
       </p>
       {data.anomalies.map((anomaly) => (
         <AnomalyCard key={anomaly.id} anomaly={anomaly} />

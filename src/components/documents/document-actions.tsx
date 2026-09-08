@@ -5,11 +5,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2, Loader2, X } from "lucide-react";
 import type { DocumentDTO, DocumentType } from "@/lib/ui-types";
 import { DOCUMENT_TYPE_LABELS_AR } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 const TYPES = Object.keys(DOCUMENT_TYPE_LABELS_AR) as DocumentType[];
 const input = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
 
 export function DocumentActions({ doc }: { doc: DocumentDTO }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [fileName, setFileName] = useState(doc.fileName);
@@ -28,7 +30,7 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName, type }),
       });
-      if (!res.ok) throw new Error("فشل الحفظ");
+      if (!res.ok) throw new Error(t("documents.saveFailed"));
     },
     onSuccess: () => { invalidate(); setEditing(false); },
   });
@@ -36,7 +38,7 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
   const remove = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("فشل الحذف");
+      if (!res.ok) throw new Error(t("documents.deleteFailed"));
     },
     onSuccess: invalidate,
   });
@@ -48,7 +50,7 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
           type="button"
           onClick={() => setEditing(true)}
           className="rounded-lg p-1.5 text-[rgb(var(--muted))] hover:bg-black/5 hover:text-brand-600 dark:hover:bg-white/5"
-          title="تعديل"
+          title={t("documents.edit")}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
@@ -56,12 +58,12 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
           type="button"
           disabled={remove.isPending}
           onClick={() => {
-            if (window.confirm(`حذف «${doc.fileName}» وكل الحركات المستخرجة منه؟`)) {
+            if (window.confirm(t("documents.confirmDeleteDocument", { name: doc.fileName }))) {
               remove.mutate();
             }
           }}
           className="rounded-lg p-1.5 text-[rgb(var(--muted))] hover:bg-severity-critical/10 hover:text-severity-critical"
-          title="حذف"
+          title={t("documents.delete")}
         >
           {remove.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
         </button>
@@ -75,27 +77,27 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
             className="surface w-full max-w-md space-y-4 rounded-2xl border p-5 shadow-card"
           >
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold">تعديل المستند</h3>
+              <h3 className="font-semibold">{t("documents.editDocument")}</h3>
               <button type="button" onClick={() => setEditing(false)} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <label className="block space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">اسم الملف</span>
+              <span className="text-[rgb(var(--muted))]">{t("documents.fileName")}</span>
               <input className={input} value={fileName} onChange={(e) => setFileName(e.target.value)} />
             </label>
             <label className="block space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">النوع</span>
+              <span className="text-[rgb(var(--muted))]">{t("documents.type")}</span>
               <select className={input} value={type} onChange={(e) => setType(e.target.value as DocumentType)}>
                 {TYPES.map((t) => <option key={t} value={t}>{DOCUMENT_TYPE_LABELS_AR[t]}</option>)}
               </select>
             </label>
-            {save.isError && <p className="text-sm text-severity-critical">فشل الحفظ</p>}
+            {save.isError && <p className="text-sm text-severity-critical">{t("documents.saveFailed")}</p>}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setEditing(false)} className="rounded-lg border px-4 py-2 text-sm">إلغاء</button>
+              <button type="button" onClick={() => setEditing(false)} className="rounded-lg border px-4 py-2 text-sm">{t("documents.cancel")}</button>
               <button type="submit" disabled={save.isPending} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
                 {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                حفظ
+                {t("documents.save")}
               </button>
             </div>
           </form>

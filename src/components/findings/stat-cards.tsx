@@ -1,27 +1,29 @@
 "use client";
 
 import { FolderOpen, Search, FileCheck2, Archive } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 import type { ExceptionDTO } from "@/lib/ui-types";
 
 export function StatCards({ exceptions }: { exceptions: ExceptionDTO[] }) {
+  const { t } = useT();
   const count = (s: string) => exceptions.filter((e) => e.status === s).length;
 
   const stats = [
-    { labelAr: "مفتوحة", value: count("OPEN"), icon: FolderOpen, tone: "text-severity-info" },
+    { labelAr: t("findings.stat.open"), value: count("OPEN"), icon: FolderOpen, tone: "text-severity-info" },
     {
-      labelAr: "قيد الفحص",
+      labelAr: t("findings.stat.underInvestigation"),
       value: count("UNDER_INVESTIGATION"),
       icon: Search,
       tone: "text-severity-medium",
     },
     {
-      labelAr: "منتهية بنتيجة تدقيق",
+      labelAr: t("findings.stat.concludedWithFinding"),
       value: count("CONCLUDED_WITH_FINDING"),
       icon: FileCheck2,
       tone: "text-severity-critical",
     },
     {
-      labelAr: "مغلقة دون نتيجة تدقيق",
+      labelAr: t("findings.stat.closedNoFinding"),
       value: count("CLOSED_NO_FINDING"),
       icon: Archive,
       tone: "text-[rgb(var(--muted))]",

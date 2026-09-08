@@ -6,6 +6,7 @@ import { Loader2, Plus, X } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { AnomalySeverity, RuleCategory, RuleScope } from "@/lib/ui-types";
 import { RULE_CATEGORY_LABELS_AR, SEVERITY_LABELS_AR } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 type RuleType =
   | "field_compare"
@@ -16,15 +17,15 @@ type RuleType =
   | "time_window"
   | "aggregate";
 
-const TYPE_LABELS: Record<RuleType, string> = {
-  field_compare: "مقارنة حقل (حد رقمي)",
-  threshold_avoidance: "التفاف على حد الاعتماد",
-  round_amount: "مبلغ مُدوَّر",
-  value_list: "قائمة أطراف/حسابات",
-  missing_field: "حقل مفقود",
-  time_window: "توقيت (خارج الدوام/عطلة)",
-  aggregate: "تجميع (عدد/مجموع)",
-};
+const TYPE_LABEL_KEYS = {
+  field_compare: "rules.type.fieldCompare",
+  threshold_avoidance: "rules.type.thresholdAvoidance",
+  round_amount: "rules.type.roundAmount",
+  value_list: "rules.type.valueList",
+  missing_field: "rules.type.missingField",
+  time_window: "rules.type.timeWindow",
+  aggregate: "rules.type.aggregate",
+} as const;
 
 const TYPE_CATEGORY: Record<RuleType, RuleCategory> = {
   field_compare: "NUMERIC",
@@ -40,6 +41,7 @@ const SEVERITIES: AnomalySeverity[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INF
 const input = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
 
 export function AddRuleForm({ onClose }: { onClose: () => void }) {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
 
@@ -93,7 +95,7 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: async () => {
       const definition = buildDefinition();
-      if (!definition) throw new Error("بيانات ناقصة");
+      if (!definition) throw new Error(t("rules.error.incomplete"));
       const res = await fetch("/api/rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,7 +111,7 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "فشل الإنشاء");
+        throw new Error(d.error ?? t("rules.error.createFailed"));
       }
     },
     onSuccess: () => {
@@ -124,7 +126,7 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
       className="surface space-y-4 rounded-xl border p-4 shadow-card"
     >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">إضافة قاعدة تدقيق</h3>
+        <h3 className="font-semibold">{t("rules.form.title")}</h3>
         <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
           <X className="h-4 w-4" />
         </button>
@@ -132,32 +134,32 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">اسم القاعدة</span>
-          <input className={input} value={nameAr} onChange={(e) => setNameAr(e.target.value)} required placeholder="مثال: معاملات كبيرة" />
+          <span className="text-[rgb(var(--muted))]">{t("rules.form.name")}</span>
+          <input className={input} value={nameAr} onChange={(e) => setNameAr(e.target.value)} required placeholder={t("rules.form.namePlaceholder")} />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">الرمز (اختياري)</span>
+          <span className="text-[rgb(var(--muted))]">{t("rules.form.code")}</span>
           <input className={input} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} placeholder="LARGE-ITEMS" />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">النوع</span>
+          <span className="text-[rgb(var(--muted))]">{t("rules.form.type")}</span>
           <select className={input} value={type} onChange={(e) => setType(e.target.value as RuleType)}>
-            {(Object.keys(TYPE_LABELS) as RuleType[]).map((t) => (
-              <option key={t} value={t}>{TYPE_LABELS[t]} — {RULE_CATEGORY_LABELS_AR[TYPE_CATEGORY[t]]}</option>
+            {(Object.keys(TYPE_LABEL_KEYS) as RuleType[]).map((rt) => (
+              <option key={rt} value={rt}>{t(TYPE_LABEL_KEYS[rt])} — {RULE_CATEGORY_LABELS_AR[TYPE_CATEGORY[rt]]}</option>
             ))}
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">الخطورة</span>
+          <span className="text-[rgb(var(--muted))]">{t("rules.form.severity")}</span>
           <select className={input} value={severity} onChange={(e) => setSeverity(e.target.value as AnomalySeverity)}>
             {SEVERITIES.map((s) => <option key={s} value={s}>{SEVERITY_LABELS_AR[s]}</option>)}
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">النطاق</span>
+          <span className="text-[rgb(var(--muted))]">{t("rules.form.scope")}</span>
           <select className={input} value={scope} onChange={(e) => setScope(e.target.value as RuleScope)}>
-            <option value="FIRM">على مستوى الشركة</option>
-            <option value="ENGAGEMENT">لهذه المهمة فقط</option>
+            <option value="FIRM">{t("rules.scope.firm")}</option>
+            <option value="ENGAGEMENT">{t("rules.scope.engagement")}</option>
           </select>
         </label>
       </div>
@@ -168,39 +170,39 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
           <>
             {type === "field_compare" && (
               <label className="space-y-1 text-sm">
-                <span className="text-[rgb(var(--muted))]">الحقل</span>
+                <span className="text-[rgb(var(--muted))]">{t("rules.form.field")}</span>
                 <select className={input} value={field} onChange={(e) => setField(e.target.value)}>
-                  <option value="amount">المبلغ</option>
-                  <option value="vatAmount">الضريبة</option>
-                  <option value="vatRatioPct">نسبة الضريبة %</option>
-                  <option value="hour">ساعة القيد</option>
-                  <option value="weekday">يوم الأسبوع</option>
-                  <option value="valueVsPostedDays">فارق التواريخ (أيام)</option>
+                  <option value="amount">{t("rules.field.amount")}</option>
+                  <option value="vatAmount">{t("rules.field.vatAmount")}</option>
+                  <option value="vatRatioPct">{t("rules.field.vatRatioPct")}</option>
+                  <option value="hour">{t("rules.field.hour")}</option>
+                  <option value="weekday">{t("rules.field.weekday")}</option>
+                  <option value="valueVsPostedDays">{t("rules.field.valueVsPostedDays")}</option>
                 </select>
               </label>
             )}
             {type === "aggregate" && (
               <label className="space-y-1 text-sm">
-                <span className="text-[rgb(var(--muted))]">التجميع حسب</span>
+                <span className="text-[rgb(var(--muted))]">{t("rules.form.groupBy")}</span>
                 <select className={input} multiple value={aggGroup} onChange={(e) => setAggGroup(Array.from(e.target.selectedOptions, (o) => o.value))}>
-                  <option value="counterparty">الطرف المقابل</option>
-                  <option value="account">الحساب</option>
-                  <option value="amount">المبلغ</option>
-                  <option value="reference">المرجع</option>
+                  <option value="counterparty">{t("rules.field.counterparty")}</option>
+                  <option value="account">{t("rules.field.account")}</option>
+                  <option value="amount">{t("rules.field.amount")}</option>
+                  <option value="reference">{t("rules.field.reference")}</option>
                 </select>
               </label>
             )}
             {type === "aggregate" && (
               <label className="space-y-1 text-sm">
-                <span className="text-[rgb(var(--muted))]">الدالة</span>
+                <span className="text-[rgb(var(--muted))]">{t("rules.form.function")}</span>
                 <select className={input} value={agg} onChange={(e) => setAgg(e.target.value)}>
-                  <option value="count">العدد</option>
-                  <option value="sum">المجموع</option>
+                  <option value="count">{t("rules.agg.count")}</option>
+                  <option value="sum">{t("rules.agg.sum")}</option>
                 </select>
               </label>
             )}
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">الشرط</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.condition")}</span>
               <select className={input} value={op} onChange={(e) => setOp(e.target.value)}>
                 <option value="gte">≥</option>
                 <option value="gt">&gt;</option>
@@ -208,22 +210,22 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
                 <option value="lt">&lt;</option>
                 <option value="eq">=</option>
                 <option value="neq">≠</option>
-                <option value="between">بين</option>
+                <option value="between">{t("rules.op.between")}</option>
               </select>
             </label>
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">القيمة</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.value")}</span>
               <input className={input} type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} />
             </label>
             {op === "between" && (
               <label className="space-y-1 text-sm">
-                <span className="text-[rgb(var(--muted))]">القيمة العليا</span>
+                <span className="text-[rgb(var(--muted))]">{t("rules.form.value2")}</span>
                 <input className={input} type="number" step="any" value={value2} onChange={(e) => setValue2(e.target.value)} />
               </label>
             )}
             {type === "aggregate" && (
               <label className="space-y-1 text-sm">
-                <span className="text-[rgb(var(--muted))]">نافذة أيام (اختياري)</span>
+                <span className="text-[rgb(var(--muted))]">{t("rules.form.windowDays")}</span>
                 <input className={input} type="number" value={windowDays} onChange={(e) => setWindowDays(e.target.value)} />
               </label>
             )}
@@ -233,11 +235,11 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
         {type === "threshold_avoidance" && (
           <>
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">حد الاعتماد</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.threshold")}</span>
               <input className={input} type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} />
             </label>
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">الهامش %</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.marginPct")}</span>
               <input className={input} type="number" step="any" value={marginPct} onChange={(e) => setMarginPct(e.target.value)} />
             </label>
           </>
@@ -245,7 +247,7 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
 
         {type === "round_amount" && (
           <label className="space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">عدد الأصفار التابعة</span>
+            <span className="text-[rgb(var(--muted))]">{t("rules.form.minZeros")}</span>
             <input className={input} type="number" value={minZeros} onChange={(e) => setMinZeros(e.target.value)} />
           </label>
         )}
@@ -253,45 +255,45 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
         {type === "value_list" && (
           <>
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">الحقل</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.field")}</span>
               <select className={input} value={listField} onChange={(e) => setListField(e.target.value)}>
-                <option value="counterparty">الطرف المقابل</option>
-                <option value="account">الحساب</option>
+                <option value="counterparty">{t("rules.field.counterparty")}</option>
+                <option value="account">{t("rules.field.account")}</option>
               </select>
             </label>
             <label className="space-y-1 text-sm">
-              <span className="text-[rgb(var(--muted))]">النوع</span>
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.type")}</span>
               <select className={input} value={listMode} onChange={(e) => setListMode(e.target.value)}>
-                <option value="deny">قائمة محظورة</option>
-                <option value="allow">قائمة معتمدة</option>
+                <option value="deny">{t("rules.list.deny")}</option>
+                <option value="allow">{t("rules.list.allow")}</option>
               </select>
             </label>
             <label className="space-y-1 text-sm sm:col-span-3">
-              <span className="text-[rgb(var(--muted))]">القيم (مفصولة بفواصل)</span>
-              <input className={input} value={listValues} onChange={(e) => setListValues(e.target.value)} placeholder="شركة أ، شركة ب" />
+              <span className="text-[rgb(var(--muted))]">{t("rules.form.listValues")}</span>
+              <input className={input} value={listValues} onChange={(e) => setListValues(e.target.value)} placeholder={t("rules.form.listValuesPlaceholder")} />
             </label>
           </>
         )}
 
         {type === "missing_field" && (
           <label className="space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">الحقل المطلوب</span>
+            <span className="text-[rgb(var(--muted))]">{t("rules.form.requiredField")}</span>
             <select className={input} value={missing} onChange={(e) => setMissing(e.target.value)}>
-              <option value="document">المستند الداعم</option>
-              <option value="counterparty">الطرف المقابل</option>
-              <option value="account">الحساب</option>
-              <option value="vatAmount">قيمة الضريبة</option>
-              <option value="valueDate">تاريخ القيمة</option>
+              <option value="document">{t("rules.missing.document")}</option>
+              <option value="counterparty">{t("rules.field.counterparty")}</option>
+              <option value="account">{t("rules.field.account")}</option>
+              <option value="vatAmount">{t("rules.missing.vatAmount")}</option>
+              <option value="valueDate">{t("rules.missing.valueDate")}</option>
             </select>
           </label>
         )}
 
         {type === "time_window" && (
           <label className="space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">النوع</span>
+            <span className="text-[rgb(var(--muted))]">{t("rules.form.type")}</span>
             <select className={input} value={timeKind} onChange={(e) => setTimeKind(e.target.value)}>
-              <option value="off_hours">خارج ساعات العمل</option>
-              <option value="weekend">عطلة نهاية الأسبوع</option>
+              <option value="off_hours">{t("rules.time.offHours")}</option>
+              <option value="weekend">{t("rules.time.weekend")}</option>
             </select>
           </label>
         )}
@@ -302,10 +304,10 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">إلغاء</button>
+        <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">{t("rules.form.cancel")}</button>
         <button type="submit" disabled={mutation.isPending} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          حفظ القاعدة
+          {t("rules.form.save")}
         </button>
       </div>
     </form>

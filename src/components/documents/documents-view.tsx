@@ -17,6 +17,7 @@ import {
   DOCUMENT_TYPE_LABELS_AR,
 } from "@/lib/labels";
 import { formatBytes, formatDateTime } from "@/lib/format";
+import { useT } from "@/lib/i18n/use-t";
 import { UploadButton } from "./upload-button";
 import { ImportTransactions } from "./import-transactions";
 import { ImportedDatasets } from "./imported-datasets";
@@ -41,6 +42,7 @@ function iconFor(mimeType: string) {
 }
 
 export function DocumentsView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const { data, isPending, isError } = useQuery({
     queryKey: ["documents", engagementId],
@@ -51,7 +53,7 @@ export function DocumentsView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[rgb(var(--muted))]">
-          {data ? `${data.documents.length} مستند` : " "}
+          {data ? t("documents.documentCount", { count: data.documents.length }) : " "}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <ImportTransactions />
@@ -60,28 +62,24 @@ export function DocumentsView() {
       </div>
 
       <div className="surface rounded-lg border border-brand-500/20 bg-brand-50/50 px-4 py-2.5 text-xs text-[rgb(var(--muted))] dark:bg-brand-700/5">
-        💡 <span className="font-medium">«استيراد معاملات (CSV)»</span> هو المسار المعتمد
-        في عمليات التدقيق: يقرأ أرقامك كما هي (بلا استخراج تلقائي) ويُنشئ «البيانات المستوردة»
-        التي تعمل عليها عملية التدقيق. أما <span className="font-medium">«رفع مستند»</span> فيستخرج
-        الحركات آليًا (OCR) للوحة التحكم فقط، <span className="font-medium">ولا يُستخدم في عمليات التدقيق</span>
-        (ويتطلب تفعيل مفتاح Claude للقراءة الحقيقية).
+        💡 <span className="font-medium">{t("documents.tipImportName")}</span> {t("documents.tipImportBody")} <span className="font-medium">{t("documents.tipUploadName")}</span> {t("documents.tipUploadBody")} <span className="font-medium">{t("documents.tipUploadEmphasis")}</span> {t("documents.tipUploadSuffix")}
       </div>
 
       <ImportedDatasets />
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-[rgb(var(--muted))]">مستندات OCR المرفوعة</h2>
+        <h2 className="mb-2 text-sm font-semibold text-[rgb(var(--muted))]">{t("documents.uploadedOcrDocuments")}</h2>
       </div>
 
       {isPending ? (
         <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
           <Loader2 className="h-5 w-5 animate-spin" />
-          جارٍ تحميل المستندات...
+          {t("documents.loadingDocuments")}
         </div>
       ) : isError ? (
         <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-severity-critical">
           <ServerCrash className="h-6 w-6" />
-          تعذّر تحميل البيانات.
+          {t("documents.loadDataFailed")}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -101,6 +99,7 @@ function DocumentCard({
   doc: DocumentDTO;
   Icon: typeof FileText;
 }) {
+  const { t } = useT();
   return (
     <article className="surface flex flex-col gap-3 rounded-xl border p-4 shadow-card">
       <div className="flex items-start gap-3">
@@ -126,7 +125,7 @@ function DocumentCard({
         <span>{formatDateTime(doc.uploadedAt)}</span>
         {doc.extractedCount !== null && (
           <span className="font-medium text-[rgb(var(--foreground))]">
-            {doc.extractedCount} حركة مستخرجة
+            {t("documents.extractedTransactionsCount", { count: doc.extractedCount })}
           </span>
         )}
       </div>

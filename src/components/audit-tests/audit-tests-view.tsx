@@ -3,10 +3,14 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, FlaskConical, RefreshCw } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 
 interface TestItem { key: string; name: string; nameAr: string; testType: string }
 interface Creatable { testType: string; kind: string; datasetKinds: string[]; params?: "round" | "dupamt" }
 
+// Arabic labels used to pre-fill the editable Arabic-name field when a test type
+// is picked — always Arabic regardless of the active UI locale.
 const KIND_LABEL_AR: Record<string, string> = {
   POPULATION_MEMBER: "اكتمال المجتمع (مؤشّر لكل سجل)",
   SOURCE_TO_CANONICAL_MISMATCH: "تطابق المصدر مع الترحيل المحاسبي",
@@ -16,31 +20,48 @@ const KIND_LABEL_AR: Record<string, string> = {
   ROUND_NUMBER_FREQUENCY: "تكرار المبالغ المدوّرة",
   DUPLICATE_AMOUNT_FREQUENCY: "تكرار المبالغ المتطابقة",
 };
+const KIND_LABEL_KEY: Record<string, MessageKey> = {
+  POPULATION_MEMBER: "auditTests.kind.POPULATION_MEMBER",
+  SOURCE_TO_CANONICAL_MISMATCH: "auditTests.kind.SOURCE_TO_CANONICAL_MISMATCH",
+  UNBALANCED_JE: "auditTests.kind.UNBALANCED_JE",
+  INVALID_DEBIT_CREDIT: "auditTests.kind.INVALID_DEBIT_CREDIT",
+  TB_ACCOUNT_DUPLICATION: "auditTests.kind.TB_ACCOUNT_DUPLICATION",
+  ROUND_NUMBER_FREQUENCY: "auditTests.kind.ROUND_NUMBER_FREQUENCY",
+  DUPLICATE_AMOUNT_FREQUENCY: "auditTests.kind.DUPLICATE_AMOUNT_FREQUENCY",
+};
 // Sensible starting values for statistical parameters (user may adjust).
 const STAT_DEFAULTS: Record<string, Record<string, string>> = {
   round: { roundingQuantum: "1000.00", minimumPopulation: "1", minimumRoundCount: "1", rateThresholdNum: "1", rateThresholdDenom: "2" },
   dupamt: { minimumOccurrenceCount: "2" },
 };
-const STAT_FIELDS: Record<string, { key: string; labelAr: string }[]> = {
+const STAT_FIELDS: Record<string, { key: string }[]> = {
   round: [
-    { key: "roundingQuantum", labelAr: "وحدة التدوير (مثال 1000.00)" },
-    { key: "minimumPopulation", labelAr: "أدنى حجم مجتمع" },
-    { key: "minimumRoundCount", labelAr: "أدنى عدد مبالغ مدوّرة" },
-    { key: "rateThresholdNum", labelAr: "بسط نسبة العتبة" },
-    { key: "rateThresholdDenom", labelAr: "مقام نسبة العتبة" },
+    { key: "roundingQuantum" },
+    { key: "minimumPopulation" },
+    { key: "minimumRoundCount" },
+    { key: "rateThresholdNum" },
+    { key: "rateThresholdDenom" },
   ],
-  dupamt: [{ key: "minimumOccurrenceCount", labelAr: "أدنى عدد تكرارات (≥ 2)" }],
+  dupamt: [{ key: "minimumOccurrenceCount" }],
 };
-const TESTTYPE_LABEL_AR: Record<string, string> = {
-  DATA_QUALITY: "جودة البيانات",
-  ACCOUNTING_INTEGRITY: "سلامة محاسبية",
-  STATISTICAL: "إحصائي",
+const STAT_FIELD_KEY: Record<string, MessageKey> = {
+  roundingQuantum: "auditTests.statField.roundingQuantum",
+  minimumPopulation: "auditTests.statField.minimumPopulation",
+  minimumRoundCount: "auditTests.statField.minimumRoundCount",
+  rateThresholdNum: "auditTests.statField.rateThresholdNum",
+  rateThresholdDenom: "auditTests.statField.rateThresholdDenom",
+  minimumOccurrenceCount: "auditTests.statField.minimumOccurrenceCount",
 };
-const DS_LABEL_AR: Record<string, string> = {
-  GENERAL_LEDGER: "دفتر الأستاذ",
-  TRIAL_BALANCE: "ميزان المراجعة",
-  BANK: "كشف بنكي",
-  OTHER: "أخرى",
+const TESTTYPE_LABEL_KEY: Record<string, MessageKey> = {
+  DATA_QUALITY: "auditTests.testType.DATA_QUALITY",
+  ACCOUNTING_INTEGRITY: "auditTests.testType.ACCOUNTING_INTEGRITY",
+  STATISTICAL: "auditTests.testType.STATISTICAL",
+};
+const DS_LABEL_KEY: Record<string, MessageKey> = {
+  GENERAL_LEDGER: "auditTests.dsKind.GENERAL_LEDGER",
+  TRIAL_BALANCE: "auditTests.dsKind.TRIAL_BALANCE",
+  BANK: "auditTests.dsKind.BANK",
+  OTHER: "auditTests.dsKind.OTHER",
 };
 
 const card = "surface rounded-xl border p-4";
@@ -55,7 +76,11 @@ async function jget<T>(url: string): Promise<T> {
 }
 
 export function AuditTestsView() {
+  const { t } = useT();
   const qc = useQueryClient();
+  const kindLabel = (k: string) => (KIND_LABEL_KEY[k] ? t(KIND_LABEL_KEY[k]!) : k);
+  const testTypeLabel = (tt: string) => (TESTTYPE_LABEL_KEY[tt] ? t(TESTTYPE_LABEL_KEY[tt]!) : tt);
+  const dsLabel = (k: string) => (DS_LABEL_KEY[k] ? t(DS_LABEL_KEY[k]!) : k);
   const [showForm, setShowForm] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [registryKey, setRegistryKey] = useState("");
@@ -88,7 +113,7 @@ export function AuditTestsView() {
 
   const create = useMutation({
     mutationFn: async () => {
-      if (!selected) throw new Error("اختر نوع الاختبار");
+      if (!selected) throw new Error(t("auditTests.selectTestTypeError"));
       const r = await fetch("/api/audit-tests", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -99,7 +124,7 @@ export function AuditTestsView() {
         }),
       });
       const d = (await r.json().catch(() => ({}))) as { error?: string };
-      if (!r.ok) throw new Error(d.error ?? "فشل إنشاء الاختبار");
+      if (!r.ok) throw new Error(d.error ?? t("auditTests.createFailed"));
     },
     onSuccess: () => { reset(); setShowForm(false); void qc.invalidateQueries({ queryKey: ["audit-tests-admin"] }); },
     onError: (e) => setErr((e as Error).message),
@@ -114,18 +139,18 @@ export function AuditTestsView() {
 
       <div className={card}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">اختبارات التدقيق المُفعّلة</h2>
+          <h2 className="font-semibold">{t("auditTests.enabledTitle")}</h2>
           <div className="flex gap-2">
-            <button className={ghost} onClick={() => void data.refetch()}><RefreshCw className="h-4 w-4" />تحديث</button>
+            <button className={ghost} onClick={() => void data.refetch()}><RefreshCw className="h-4 w-4" />{t("auditTests.refresh")}</button>
             <button className={btn} onClick={() => { setShowForm((v) => !v); setErr(null); }}>
-              <Plus className="h-4 w-4" />اختبار جديد
+              <Plus className="h-4 w-4" />{t("auditTests.newTest")}
             </button>
           </div>
         </div>
         {data.isPending ? (
-          <p className="text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p>
+          <p className="text-sm text-[rgb(var(--muted))]">{t("auditTests.loading")}</p>
         ) : (data.data?.tests.length ?? 0) === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">لا توجد اختبارات بعد. أنشئ اختبارًا ليصبح متاحًا في عمليات التدقيق.</p>
+          <p className="text-sm text-[rgb(var(--muted))]">{t("auditTests.emptyList")}</p>
         ) : (
           <ul className="divide-y">
             {data.data!.tests.map((t) => (
@@ -135,7 +160,7 @@ export function AuditTestsView() {
                   <span>{t.nameAr || t.name}</span>
                   <span className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[11px] dark:bg-white/5">{t.key}</span>
                 </span>
-                <span className="rounded-full border px-2 py-0.5 text-xs">{TESTTYPE_LABEL_AR[t.testType] ?? t.testType}</span>
+                <span className="rounded-full border px-2 py-0.5 text-xs">{testTypeLabel(t.testType)}</span>
               </li>
             ))}
           </ul>
@@ -144,15 +169,15 @@ export function AuditTestsView() {
 
       {showForm && (
         <div className={card}>
-          <h3 className="mb-3 font-semibold">إنشاء اختبار تدقيق جديد</h3>
+          <h3 className="mb-3 font-semibold">{t("auditTests.createTitle")}</h3>
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-sm font-medium">نوع الاختبار</label>
+              <label className="mb-1 block text-sm font-medium">{t("auditTests.testTypeLabel")}</label>
               <select className={field} value={registryKey} onChange={(e) => onSelectKind(e.target.value)}>
-                <option value="">— اختر نوع الاختبار —</option>
+                <option value="">{t("auditTests.selectPlaceholder")}</option>
                 {creatable.map((c) => (
                   <option key={`${c.testType}:${c.kind}`} value={`${c.testType}:${c.kind}`}>
-                    {KIND_LABEL_AR[c.kind] ?? c.kind} ({TESTTYPE_LABEL_AR[c.testType] ?? c.testType})
+                    {kindLabel(c.kind)} ({testTypeLabel(c.testType)})
                   </option>
                 ))}
               </select>
@@ -160,23 +185,23 @@ export function AuditTestsView() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">المفتاح (رمز فريد)</label>
-                <input className={field} value={key} onChange={(e) => setKey(e.target.value)} placeholder="مثال: GL-BALANCE" dir="ltr" />
-                <p className="mt-1 text-xs text-[rgb(var(--muted))]">يُملأ تلقائيًا من نوع الاختبار — عدّله فقط عند إنشاء أكثر من اختبار بنفس النوع.</p>
+                <label className="mb-1 block text-sm font-medium">{t("auditTests.keyLabel")}</label>
+                <input className={field} value={key} onChange={(e) => setKey(e.target.value)} placeholder={t("auditTests.keyPlaceholder")} dir="ltr" />
+                <p className="mt-1 text-xs text-[rgb(var(--muted))]">{t("auditTests.keyHint")}</p>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">الاسم (عربي)</label>
-                <input className={field} value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="اسم الاختبار بالعربية" />
+                <label className="mb-1 block text-sm font-medium">{t("auditTests.nameArLabel")}</label>
+                <input className={field} value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder={t("auditTests.nameArPlaceholder")} />
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">الاسم (إنجليزي — اختياري)</label>
+              <label className="mb-1 block text-sm font-medium">{t("auditTests.nameEnLabel")}</label>
               <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="English name (optional)" dir="ltr" />
             </div>
 
             {selected && (
               <div>
-                <label className="mb-1 block text-sm font-medium">أنواع البيانات المطلوبة</label>
+                <label className="mb-1 block text-sm font-medium">{t("auditTests.requiredDatasets")}</label>
                 <div className="flex flex-wrap gap-3">
                   {selected.datasetKinds.map((k) => (
                     <label key={k} className="flex items-center gap-2 text-sm">
@@ -185,7 +210,7 @@ export function AuditTestsView() {
                         checked={pickedDs.has(k)}
                         onChange={() => { const n = new Set(pickedDs); if (n.has(k)) n.delete(k); else n.add(k); setPickedDs(n); }}
                       />
-                      <span>{DS_LABEL_AR[k] ?? k}</span>
+                      <span>{dsLabel(k)}</span>
                     </label>
                   ))}
                 </div>
@@ -194,11 +219,11 @@ export function AuditTestsView() {
 
             {selected?.params && (
               <div>
-                <label className="mb-1 block text-sm font-medium">معاملات الاختبار الإحصائي (مُجمّدة مع الاختبار)</label>
+                <label className="mb-1 block text-sm font-medium">{t("auditTests.statParamsLabel")}</label>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(STAT_FIELDS[selected.params] ?? []).map((f) => (
                     <div key={f.key}>
-                      <label className="mb-1 block text-xs text-[rgb(var(--muted))]">{f.labelAr}</label>
+                      <label className="mb-1 block text-xs text-[rgb(var(--muted))]">{STAT_FIELD_KEY[f.key] ? t(STAT_FIELD_KEY[f.key]!) : f.key}</label>
                       <input
                         className={field}
                         dir="ltr"
@@ -214,9 +239,9 @@ export function AuditTestsView() {
 
             <div className="flex gap-2">
               <button className={btn} disabled={!canSubmit || create.isPending} onClick={() => { setErr(null); create.mutate(); }}>
-                {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}إنشاء وتفعيل
+                {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}{t("auditTests.createActivate")}
               </button>
-              <button className={ghost} onClick={() => { reset(); setShowForm(false); }}>إلغاء</button>
+              <button className={ghost} onClick={() => { reset(); setShowForm(false); }}>{t("auditTests.cancel")}</button>
             </div>
           </div>
         </div>

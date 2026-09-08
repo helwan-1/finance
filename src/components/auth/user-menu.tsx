@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, LogIn, ChevronDown } from "lucide-react";
 import { ROLE_LABELS_AR } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 interface MeResponse {
   user: {
@@ -22,6 +23,7 @@ async function fetchMe(): Promise<MeResponse> {
 }
 
 export function UserMenu() {
+  const { t } = useT();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -38,8 +40,8 @@ export function UserMenu() {
 
   const user = data?.user ?? null;
   // Demo mode (no session): show a representative name so the shell looks real.
-  const nameAr = user?.fullNameAr ?? "سارة الحربي";
-  const roleAr = user ? (ROLE_LABELS_AR[user.role] ?? user.role) : "نسخة تجريبية";
+  const nameAr = user?.fullNameAr ?? t("auth.demoName");
+  const roleAr = user ? (ROLE_LABELS_AR[user.role] ?? user.role) : t("auth.demoRole");
   const initial = nameAr.charAt(0);
 
   async function logout() {
@@ -75,7 +77,7 @@ export function UserMenu() {
               className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-sm text-severity-critical hover:bg-black/5 dark:hover:bg-white/5"
             >
               <LogOut className="h-4 w-4" />
-              تسجيل الخروج
+              {t("auth.signOut")}
             </button>
           ) : (
             <button
@@ -84,7 +86,7 @@ export function UserMenu() {
               className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-sm hover:bg-black/5 dark:hover:bg-white/5"
             >
               <LogIn className="h-4 w-4" />
-              تسجيل الدخول
+              {t("auth.signIn")}
             </button>
           )}
         </div>

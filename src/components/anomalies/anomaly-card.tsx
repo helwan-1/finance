@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { AnomalyDTO, AnomalyRuleCode } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 import { AnomalyDetailDialog } from "./anomaly-detail-dialog";
 import {
   RULE_LABELS_AR,
@@ -50,6 +51,7 @@ const RULE_ICON: Record<AnomalyRuleCode, LucideIcon> = {
 const DEFAULT_ICON: LucideIcon = SlidersHorizontal;
 
 export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
+  const { t } = useT();
   const Icon = RULE_ICON[anomaly.ruleCode] ?? DEFAULT_ICON;
   const [showDetail, setShowDetail] = useState(false);
 
@@ -88,7 +90,7 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[rgb(var(--muted))]">
           {anomaly.reference && (
             <span>
-              المرجع:{" "}
+              {t("anomalies.card.reference")}{" "}
               <span className="font-medium text-[rgb(var(--foreground))]">
                 {anomaly.reference}
               </span>
@@ -96,7 +98,7 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
           )}
           {anomaly.amount && (
             <span>
-              المبلغ:{" "}
+              {t("anomalies.card.amount")}{" "}
               <span className="font-medium text-[rgb(var(--foreground))]">
                 {formatCurrency(anomaly.amount)}
               </span>
@@ -104,7 +106,7 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
           )}
           {anomaly.counterparty && (
             <span>
-              الطرف المقابل:{" "}
+              {t("anomalies.card.counterparty")}{" "}
               <span className="font-medium text-[rgb(var(--foreground))]">
                 {anomaly.counterparty}
               </span>
@@ -120,7 +122,7 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
             className="flex items-center gap-1.5 rounded-lg border border-brand-600/40 px-2.5 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-700/15"
           >
             <Eye className="h-3.5 w-3.5" />
-            التفاصيل
+            {t("anomalies.card.details")}
           </button>
         </div>
 
@@ -135,7 +137,7 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
         <span className="text-lg font-bold tabular-nums">
           {Math.round(Number.parseFloat(anomaly.score))}
         </span>
-        <span className="text-[10px] text-[rgb(var(--muted))]">الدرجة</span>
+        <span className="text-[10px] text-[rgb(var(--muted))]">{t("anomalies.card.score")}</span>
       </div>
     </article>
   );

@@ -5,16 +5,18 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Table2, Download, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { DatasetKind } from "@/lib/import/vocab";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 
 interface StartResult { batchId?: string; datasetId?: string; status?: string; error?: string; code?: string; rowsTotal?: number; rowsAccepted?: number; rowsRejected?: number; blockingIssues?: number }
 interface ConfirmResult { datasetId?: string; transactionsCreated?: number; error?: string }
 
-/** Dataset kinds importable via CSV, with their Arabic label and required-column hint. */
-const KIND_OPTIONS: { kind: DatasetKind; labelAr: string; requiredHintAr: string }[] = [
-  { kind: "GENERAL_LEDGER", labelAr: "دفتر الأستاذ", requiredHintAr: "«رقم الحساب» و«تاريخ القيد» ومبلغًا («مدين»/«دائن»/«المبلغ»)" },
-  { kind: "TRIAL_BALANCE", labelAr: "ميزان المراجعة", requiredHintAr: "«رقم الحساب» ورصيدًا واحدًا على الأقل (افتتاحي/حركة/ختامي، مدين أو دائن)" },
-  { kind: "BANK", labelAr: "كشف بنكي", requiredHintAr: "«تاريخ العملية» و«المبلغ»" },
-  { kind: "OTHER", labelAr: "أخرى (دليل فقط)", requiredHintAr: "لا أعمدة إلزامية — يُحفظ كدليل ولا يُنشئ بيانات تدقيق" },
+/** Dataset kinds importable via CSV, with their label and required-column hint (translated at render). */
+const KIND_OPTIONS: { kind: DatasetKind; labelKey: MessageKey; requiredHintKey: MessageKey }[] = [
+  { kind: "GENERAL_LEDGER", labelKey: "documents.kindGeneralLedger", requiredHintKey: "documents.requiredHintGeneralLedger" },
+  { kind: "TRIAL_BALANCE", labelKey: "documents.kindTrialBalance", requiredHintKey: "documents.requiredHintTrialBalance" },
+  { kind: "BANK", labelKey: "documents.kindBank", requiredHintKey: "documents.requiredHintBank" },
+  { kind: "OTHER", labelKey: "documents.kindOtherGuideOnly", requiredHintKey: "documents.requiredHintOther" },
 ];
 
 /**
@@ -26,6 +28,7 @@ const KIND_OPTIONS: { kind: DatasetKind; labelAr: string; requiredHintAr: string
  * (no OCR).
  */
 export function ImportTransactions() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -35,7 +38,7 @@ export function ImportTransactions() {
 
   const mutation = useMutation({
     mutationFn: async ({ file, datasetKind }: { file: File; datasetKind: DatasetKind }) => {
-      if (!engagementId) throw new Error("اختر ارتباط تدقيق أولاً");
+      if (!engagementId) throw new Error(t("documents.selectEngagementFirst"));
       // Phase 1 — upload + retain source + validate (halts at READY, no transactions).
       const form = new FormData();
       form.set("file", file);
@@ -44,11 +47,11 @@ export function ImportTransactions() {
       form.set("acknowledgeDuplicate", "true");
       const startRes = await fetch("/api/imports", { method: "POST", body: form });
       const start = (await startRes.json().catch(() => ({}))) as StartResult;
-      if (!startRes.ok || !start.batchId) throw new Error(start.error ?? "فشل رفع الملف");
+      if (!startRes.ok || !start.batchId) throw new Error(start.error ?? t("documents.uploadFileFailed"));
       // Phase 2 — confirm: canonicalize ACCEPTED rows into a Dataset.
       const confRes = await fetch(`/api/imports/${start.batchId}/confirm`, { method: "POST" });
       const conf = (await confRes.json().catch(() => ({}))) as ConfirmResult;
-      if (!confRes.ok) throw new Error(conf.error ?? "فشل تأكيد الاستيراد");
+      if (!confRes.ok) throw new Error(conf.error ?? t("documents.confirmImportFailed"));
       // The truthful accepted/rejected counts come from the START (validation) phase.
       return { start, conf, datasetKind };
     },
@@ -59,12 +62,20 @@ export function ImportTransactions() {
       if (accepted === 0) {
         setMsgTone("error");
         setMsg(
-          `⚠️ لم يُقبل أي سطر${rejected ? ` (رُفض ${rejected})` : ""}. تحقّق من أعمدة الملف: «${opt.labelAr}» يتطلب ${opt.requiredHintAr}.`,
+          t("documents.importNoRowsAccepted", {
+            rejectedNote: rejected ? t("documents.importRejectedNote", { rejected }) : "",
+            label: t(opt.labelKey),
+            hint: t(opt.requiredHintKey),
+          }),
         );
       } else {
         setMsgTone("info");
         setMsg(
-          `تم استيراد ${accepted} سطراً${rejected ? ` — رُفض ${rejected}` : ""} كـ«${opt.labelAr}». البيانات المستوردة جاهزة لإنشاء عملية تدقيق.`,
+          t("documents.importSuccess", {
+            accepted,
+            rejectedNote: rejected ? t("documents.importRejectedNoteDash", { rejected }) : "",
+            label: t(opt.labelKey),
+          }),
         );
       }
       void queryClient.invalidateQueries({ queryKey: ["datasets"] });
@@ -81,7 +92,7 @@ export function ImportTransactions() {
         className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
       >
         <Download className="h-4 w-4" />
-        قالب المعاملات
+        {t("documents.transactionsTemplate")}
       </a>
       <input
         ref={inputRef}
@@ -94,28 +105,28 @@ export function ImportTransactions() {
           e.target.value = "";
         }}
       />
-      <label className="sr-only" htmlFor="csv-kind">نوع البيانات</label>
+      <label className="sr-only" htmlFor="csv-kind">{t("documents.dataKind")}</label>
       <select
         id="csv-kind"
         value={kind}
         onChange={(e) => setKind(e.target.value as DatasetKind)}
         disabled={mutation.isPending}
-        title="نوع البيانات المستوردة"
+        title={t("documents.importedDataKind")}
         className="surface rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40 disabled:opacity-60"
       >
         {KIND_OPTIONS.map((o) => (
-          <option key={o.kind} value={o.kind}>{o.labelAr}</option>
+          <option key={o.kind} value={o.kind}>{t(o.labelKey)}</option>
         ))}
       </select>
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={mutation.isPending}
-        title={`استيراد ملف CSV كـ«${(KIND_OPTIONS.find((o) => o.kind === kind) ?? KIND_OPTIONS[0]!).labelAr}»`}
+        title={t("documents.importCsvAs", { label: t((KIND_OPTIONS.find((o) => o.kind === kind) ?? KIND_OPTIONS[0]!).labelKey) })}
         className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
       >
         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
-        استيراد معاملات (CSV)
+        {t("documents.importTransactionsCsv")}
       </button>
       {msg && <span className={`text-xs ${msgTone === "error" ? "text-severity-critical" : "text-[rgb(var(--muted))]"}`}>{msg}</span>}
     </div>

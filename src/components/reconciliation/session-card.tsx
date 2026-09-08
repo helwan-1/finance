@@ -2,10 +2,12 @@
 
 import { GitCompareArrows } from "lucide-react";
 import type { ReconSessionDTO } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 import { MatchesTable } from "./matches-table";
 
 /** A single reconciliation session: header, match-rate bar, and the table. */
 export function SessionCard({ session }: { session: ReconSessionDTO }) {
+  const { t } = useT();
   const reconciled = session.matchedCount + session.partialCount;
   const rate =
     session.totalCount > 0
@@ -28,11 +30,11 @@ export function SessionCard({ session }: { session: ReconSessionDTO }) {
         </div>
 
         <div className="flex items-center gap-4 text-center">
-          <Metric value={session.matchedCount} labelAr="مطابَقة" tone="text-severity-low" />
-          <Metric value={session.partialCount} labelAr="جزئية" tone="text-severity-medium" />
+          <Metric value={session.matchedCount} labelAr={t("reconciliation.metric.matched")} tone="text-severity-low" />
+          <Metric value={session.partialCount} labelAr={t("reconciliation.metric.partial")} tone="text-severity-medium" />
           <Metric
             value={session.unmatchedCount}
-            labelAr="غير مطابَقة"
+            labelAr={t("reconciliation.metric.unmatched")}
             tone="text-severity-critical"
           />
         </div>
@@ -40,7 +42,7 @@ export function SessionCard({ session }: { session: ReconSessionDTO }) {
 
       <div className="border-b p-4">
         <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-[rgb(var(--muted))]">نسبة المطابقة</span>
+          <span className="text-[rgb(var(--muted))]">{t("reconciliation.matchRate")}</span>
           <span className="font-semibold tabular-nums">{rate}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">

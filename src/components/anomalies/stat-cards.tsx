@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert, AlertTriangle, CircleCheck, Clock } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
 import type { AnomaliesResponse } from "@/lib/ui-types";
 
 async function fetchSummary(engagementId: string): Promise<AnomaliesResponse> {
@@ -21,6 +22,7 @@ interface Stat {
 }
 
 export function StatCards() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const { data } = useQuery({
     queryKey: ["anomalies-summary", engagementId],
@@ -37,25 +39,25 @@ export function StatCards() {
 
   const stats: Stat[] = [
     {
-      labelAr: "حالات حرجة",
+      labelAr: t("anomalies.stat.critical"),
       value: critical,
       icon: ShieldAlert,
       tone: "text-severity-critical",
     },
     {
-      labelAr: "خطورة عالية",
+      labelAr: t("anomalies.stat.high"),
       value: high,
       icon: AlertTriangle,
       tone: "text-severity-high",
     },
     {
-      labelAr: "قيد المتابعة",
+      labelAr: t("anomalies.stat.open"),
       value: open,
       icon: Clock,
       tone: "text-severity-medium",
     },
     {
-      labelAr: "تمت المعالجة",
+      labelAr: t("anomalies.stat.resolved"),
       value: resolved,
       icon: CircleCheck,
       tone: "text-severity-low",

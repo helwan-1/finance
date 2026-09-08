@@ -4,20 +4,22 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Play, FileCheck2, Rocket, RefreshCw } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 
 interface RunSummary { id: string; status: string; label: string | null; freezeGeneration: string | null; configFingerprint: string | null; createdAt: string }
 interface Prep { id: string; generationNo: number; status: string; failureCode: string | null }
 interface DatasetOption { id: string; kind: string; status: string; datasetHash?: string | null; createdAt?: string }
 
-const DS_KIND_AR: Record<string, string> = {
-  GENERAL_LEDGER: "دفتر الأستاذ",
-  TRIAL_BALANCE: "ميزان المراجعة",
-  BANK: "كشف بنكي",
-  OTHER: "أخرى",
+const DS_KIND_KEY: Record<string, MessageKey> = {
+  GENERAL_LEDGER: "runs.dsKind.GENERAL_LEDGER",
+  TRIAL_BALANCE: "runs.dsKind.TRIAL_BALANCE",
+  BANK: "runs.dsKind.BANK",
+  OTHER: "runs.dsKind.OTHER",
 };
-const DS_STATUS_AR: Record<string, string> = {
-  COMPLETED: "مكتملة",
-  COMPLETED_WITH_ISSUES: "مكتملة مع ملاحظات",
+const DS_STATUS_KEY: Record<string, MessageKey> = {
+  COMPLETED: "runs.dsStatus.COMPLETED",
+  COMPLETED_WITH_ISSUES: "runs.dsStatus.COMPLETED_WITH_ISSUES",
 };
 function fmtDate(iso?: string): string {
   if (!iso) return "";
@@ -45,8 +47,11 @@ async function jpost<T>(url: string, body?: unknown): Promise<T> {
 const isTerminal = (s: string) => ["COMPLETED", "FAILED", "CANCELLED"].includes(s);
 
 export function RunsView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const qc = useQueryClient();
+  const dsKind = (k: string) => (DS_KIND_KEY[k] ? t(DS_KIND_KEY[k]!) : k);
+  const dsStatus = (s: string) => (DS_STATUS_KEY[s] ? t(DS_STATUS_KEY[s]!) : s);
   const [selected, setSelected] = useState<string | null>(null);
   const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(new Set());
   const [pickedTests, setPickedTests] = useState<Set<string>>(new Set());
@@ -115,7 +120,7 @@ export function RunsView() {
     onError: (e) => setErr((e as Error).message),
   });
 
-  if (!engagementId) return <div className={card}>اختر ارتباط تدقيق من الأعلى لعرض عمليات التدقيق.</div>;
+  if (!engagementId) return <div className={card}>{t("runs.selectEngagement")}</div>;
 
   const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); apply(n); };
 
@@ -147,16 +152,16 @@ export function RunsView() {
 
       <div className={card}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">عمليات التدقيق</h2>
+          <h2 className="font-semibold">{t("runs.title")}</h2>
           <div className="flex gap-2">
-            <button className={ghost} onClick={() => void runs.refetch()}><RefreshCw className="h-4 w-4" />تحديث</button>
+            <button className={ghost} onClick={() => void runs.refetch()}><RefreshCw className="h-4 w-4" />{t("runs.refresh")}</button>
             <button className={btn} disabled={createRun.isPending} onClick={() => { setErr(null); createRun.mutate(); }}>
-              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}إنشاء عملية تدقيق
+              {createRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{t("runs.createRun")}
             </button>
           </div>
         </div>
-        {runs.isPending ? <p className="text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p> : (runs.data?.length ?? 0) === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">لا توجد عمليات تدقيق بعد.</p>
+        {runs.isPending ? <p className="text-sm text-[rgb(var(--muted))]">{t("runs.loading")}</p> : (runs.data?.length ?? 0) === 0 ? (
+          <p className="text-sm text-[rgb(var(--muted))]">{t("runs.emptyRuns")}</p>
         ) : (
           <ul className="divide-y">
             {runs.data!.map((r) => (
@@ -173,57 +178,57 @@ export function RunsView() {
 
       {run && (
         <div className={card}>
-          <h3 className="mb-2 font-semibold">تفاصيل عملية التدقيق — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
-          <p className="mb-3 text-sm">الحالة: <span className="rounded-full border px-2 py-0.5 text-xs">{run.status}</span></p>
+          <h3 className="mb-2 font-semibold">{t("runs.runDetails")} — <span className="text-xs text-[rgb(var(--muted))]">{run.id}</span></h3>
+          <p className="mb-3 text-sm">{t("runs.status")}: <span className="rounded-full border px-2 py-0.5 text-xs">{run.status}</span></p>
 
           {(run.status === "DRAFT" || run.status === "PREPARING") && (!prep.data || prep.data.status === "FAILED") && (
             <div className="space-y-3">
               <div>
-                <p className="mb-1 text-sm font-medium">البيانات المستوردة</p>
+                <p className="mb-1 text-sm font-medium">{t("runs.importedData")}</p>
                 {datasetList.length ? datasetList.map((d) => (
                   <label key={d.id} className="flex items-center gap-2 py-1 text-sm">
                     <input type="checkbox" checked={pickedDatasets.has(d.id)} onChange={() => toggle(pickedDatasets, d.id, setPickedDatasets)} />
                     <span>
-                      {DS_KIND_AR[d.kind] ?? d.kind}
+                      {dsKind(d.kind)}
                       {d.createdAt && <span className="text-[rgb(var(--muted))]"> · {fmtDate(d.createdAt)}</span>}
                       {d.datasetHash && <span className="font-mono text-[11px] text-[rgb(var(--muted))]"> · {d.datasetHash.slice(0, 10)}</span>}
-                      <span className="text-[rgb(var(--muted))]"> ({DS_STATUS_AR[d.status] ?? d.status})</span>
+                      <span className="text-[rgb(var(--muted))]"> ({dsStatus(d.status)})</span>
                     </span>
                   </label>
-                )) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد بيانات مستوردة. استورد ملفاً أولاً.</p>}
+                )) : <p className="text-xs text-[rgb(var(--muted))]">{t("runs.noImportedData")}</p>}
               </div>
               <div>
-                <p className="mb-1 text-sm font-medium">اختبارات التدقيق</p>
-                {testList.length ? testList.map((t) => {
-                  const state = testDataState(t);
-                  const reqAr = (t.supportedDatasetKinds ?? []).map((k) => DS_KIND_AR[k] ?? k).join(" أو ");
+                <p className="mb-1 text-sm font-medium">{t("runs.auditTests")}</p>
+                {testList.length ? testList.map((test) => {
+                  const state = testDataState(test);
+                  const reqAr = (test.supportedDatasetKinds ?? []).map((k) => dsKind(k)).join(t("runs.orSeparator"));
                   const disabled = state === "not_imported";
                   return (
-                    <label key={t.key} className={`flex items-start gap-2 py-1 text-sm ${disabled ? "opacity-50" : ""}`}>
-                      <input type="checkbox" className="mt-1" checked={pickedTests.has(t.key)} disabled={disabled} onChange={() => toggle(pickedTests, t.key, setPickedTests)} />
+                    <label key={test.key} className={`flex items-start gap-2 py-1 text-sm ${disabled ? "opacity-50" : ""}`}>
+                      <input type="checkbox" className="mt-1" checked={pickedTests.has(test.key)} disabled={disabled} onChange={() => toggle(pickedTests, test.key, setPickedTests)} />
                       <span>
-                        {t.nameAr || t.name} <span className="text-[rgb(var(--muted))]">({t.testType})</span>
-                        {state === "not_imported" && <span className="block text-xs text-[rgb(var(--muted))]">يتطلب بيانات: {reqAr} — غير مستوردة لهذه المهمة</span>}
-                        {state === "not_selected" && pickedTests.has(t.key) && <span className="block text-xs text-amber-600">اختر مجموعة بيانات من نوع: {reqAr}</span>}
+                        {test.nameAr || test.name} <span className="text-[rgb(var(--muted))]">({test.testType})</span>
+                        {state === "not_imported" && <span className="block text-xs text-[rgb(var(--muted))]">{t("runs.requiresDataNotImported", { reqAr })}</span>}
+                        {state === "not_selected" && pickedTests.has(test.key) && <span className="block text-xs text-amber-600">{t("runs.selectDatasetOfKind", { reqAr })}</span>}
                       </span>
                     </label>
                   );
-                }) : <p className="text-xs text-[rgb(var(--muted))]">لا توجد اختبارات مُفعّلة.</p>}
+                }) : <p className="text-xs text-[rgb(var(--muted))]">{t("runs.noEnabledTests")}</p>}
               </div>
-              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">فشل تجهيز نطاق الفحص ({prep.data.failureCode}). عدّل الاختيار وابدأ من جديد.</p>}
+              {prep.data?.status === "FAILED" && <p className="text-sm text-red-600">{t("runs.prepFailed", { code: prep.data.failureCode ?? "" })}</p>}
               <button className={btn} disabled={!canBegin || beginPrep.isPending} onClick={() => { setErr(null); beginPrep.mutate(); }}>
-                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}ابدأ تجهيز نطاق الفحص
+                {beginPrep.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}{t("runs.beginPrep")}
               </button>
             </div>
           )}
 
           {prep.data && prep.data.status !== "FAILED" && (run.status === "PREPARING" || run.status === "DRAFT") && (
             <div className="mt-3 rounded-lg border p-3 text-sm">
-              <p>تجهيز نطاق الفحص (جيل {prep.data.generationNo}): <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
-              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />يجري تجهيز نطاق الفحص في الخلفية…</p>}
+              <p>{t("runs.prepGeneration", { n: prep.data.generationNo })}: <span className="rounded-full border px-2 py-0.5 text-xs">{prep.data.status}</span></p>
+              {prep.data.status === "PREPARING" && <p className="mt-1 flex items-center gap-2 text-[rgb(var(--muted))]"><Loader2 className="h-3 w-3 animate-spin" />{t("runs.prepInBackground")}</p>}
               {prep.data.status === "COMPLETE" && (
                 <button className={`mt-2 ${btn}`} disabled={publish.isPending} onClick={() => { setErr(null); publish.mutate(prep.data!.id); }}>
-                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}اعتماد وإرسال للتنفيذ
+                  {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}{t("runs.publish")}
                 </button>
               )}
             </div>
@@ -232,20 +237,20 @@ export function RunsView() {
           {run.status !== "DRAFT" && run.status !== "PREPARING" && (
             <div className="mt-3 space-y-3">
               <div>
-                <p className="mb-1 text-sm font-medium">المحاولات</p>
+                <p className="mb-1 text-sm font-medium">{t("runs.attempts")}</p>
                 {jobs.data?.length ? <ul className="space-y-1 text-sm">{jobs.data.map((j) => (
                   <li key={j.id}>
-                    محاولة {j.attemptNo}: {j.status}{j.failureCode ? ` (${j.failureCode})` : ""}
-                    {j.failureDetail && <span className="block text-xs text-red-600">السبب: {j.failureDetail}</span>}
+                    {t("runs.attempt", { n: j.attemptNo })}: {j.status}{j.failureCode ? ` (${j.failureCode})` : ""}
+                    {j.failureDetail && <span className="block text-xs text-red-600">{t("runs.reason")}: {j.failureDetail}</span>}
                   </li>
                 ))}</ul> : <p className="text-xs text-[rgb(var(--muted))]">—</p>}
               </div>
               {run.status === "COMPLETED" && (
                 <div>
-                  <p className="mb-1 text-sm font-medium">المؤشّرات ({results.data?.length ?? 0})</p>
+                  <p className="mb-1 text-sm font-medium">{t("runs.indicators", { n: results.data?.length ?? 0 })}</p>
                   {results.data?.length ? <ul className="max-h-64 overflow-auto text-sm">{results.data.map((r) => <li key={r.id}>{r.resultCode} — {r.severity}</li>)}</ul> : (
                     <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                      لم تُنتج هذه العملية أي مؤشّرات. تحقّق من أن البيانات المستوردة تحتوي سجلات صالحة (غير مرفوضة) وأن الاختبار المختار يناسب نوعها.
+                      {t("runs.noIndicators")}
                     </p>
                   )}
                 </div>

@@ -10,6 +10,7 @@ import {
   SEVERITY_BADGE,
   SEVERITY_LABELS_AR,
 } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 import { AddRuleForm } from "./add-rule-form";
 import { ImportRules } from "./import-rules";
 
@@ -24,6 +25,7 @@ async function fetchRules(engagementId: string): Promise<RulesResponse> {
 const CATEGORY_ORDER = ["NUMERIC", "PARTY", "TIMING", "AGGREGATE"] as const;
 
 export function RulesView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -41,7 +43,7 @@ export function RulesView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !r.enabled }),
       });
-      if (!res.ok) throw new Error("فشل");
+      if (!res.ok) throw new Error(t("rules.error.failed"));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rules"] }),
   });
@@ -49,7 +51,7 @@ export function RulesView() {
   const remove = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/rules/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("فشل");
+      if (!res.ok) throw new Error(t("rules.error.failed"));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rules"] }),
   });
@@ -61,12 +63,12 @@ export function RulesView() {
       const res = await fetch(`/api/rules/run?${p.toString()}`, { method: "POST" });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(d.error ?? "فشل تشغيل التدقيق");
+        throw new Error(d.error ?? t("rules.error.runFailed"));
       }
       return (await res.json()) as RunRulesResponse;
     },
     onSuccess: (r) => {
-      setRunMsg(`تم تطبيق ${r.evaluated} قاعدة وإنتاج ${r.findings} حالة شاذة.`);
+      setRunMsg(t("rules.run.done", { evaluated: r.evaluated, findings: r.findings }));
       void queryClient.invalidateQueries({ queryKey: ["anomalies"] });
       void queryClient.invalidateQueries({ queryKey: ["anomalies-summary"] });
     },
@@ -77,7 +79,7 @@ export function RulesView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[rgb(var(--muted))]">
-          {data ? `${data.rules.length} قاعدة` : " "}
+          {data ? t("rules.count", { count: data.rules.length }) : " "}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <ImportRules />
@@ -87,7 +89,7 @@ export function RulesView() {
             className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
           >
             <Plus className="h-4 w-4" />
-            إضافة قاعدة
+            {t("rules.add")}
           </button>
           <button
             type="button"
@@ -96,7 +98,7 @@ export function RulesView() {
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
           >
             {run.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            تشغيل التدقيق
+            {t("rules.run")}
           </button>
         </div>
       </div>
@@ -111,11 +113,11 @@ export function RulesView() {
 
       {isPending ? (
         <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
-          <Loader2 className="h-5 w-5 animate-spin" /> جارٍ تحميل القواعد...
+          <Loader2 className="h-5 w-5 animate-spin" /> {t("rules.loading")}
         </div>
       ) : isError ? (
         <div className="surface flex flex-col items-center gap-2 rounded-xl border p-12 text-severity-critical">
-          <ServerCrash className="h-6 w-6" /> تعذّر تحميل القواعد.
+          <ServerCrash className="h-6 w-6" /> {t("rules.errorLoad")}
         </div>
       ) : (
         CATEGORY_ORDER.map((cat) => {
@@ -156,6 +158,7 @@ function RuleRow({
   onDelete: () => void;
   busy: boolean;
 }) {
+  const { t } = useT();
   return (
     <div className="flex items-start gap-3 p-4">
       <button
@@ -163,7 +166,7 @@ function RuleRow({
         onClick={onToggle}
         disabled={busy}
         aria-pressed={rule.enabled}
-        title={rule.enabled ? "مُفعّلة" : "معطّلة"}
+        title={rule.enabled ? t("rules.row.enabled") : t("rules.row.disabled")}
         className={`mt-0.5 h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors ${
           rule.enabled ? "bg-severity-low" : "bg-black/20 dark:bg-white/20"
         }`}
@@ -185,7 +188,7 @@ function RuleRow({
             {rule.code}
           </span>
           <span className="rounded-full border px-2 py-0.5 text-[11px] text-[rgb(var(--muted))]">
-            {rule.scope === "FIRM" ? "الشركة" : "المهمة"}
+            {rule.scope === "FIRM" ? t("rules.scope.firmShort") : t("rules.scope.engagementShort")}
           </span>
         </div>
         {rule.descriptionAr && (
@@ -198,7 +201,7 @@ function RuleRow({
         onClick={onDelete}
         disabled={busy}
         className="shrink-0 rounded-lg p-2 text-[rgb(var(--muted))] hover:bg-severity-critical/10 hover:text-severity-critical"
-        title="حذف"
+        title={t("rules.row.delete")}
       >
         <Trash2 className="h-4 w-4" />
       </button>

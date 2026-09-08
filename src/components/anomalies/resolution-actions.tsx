@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, X, ArrowUpCircle, Loader2 } from "lucide-react";
 import type { AnomaliesResponse, AnomalyDTO, AnomalyStatus } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 
 type ActionKey = "RESOLVE" | "DISMISS" | "ESCALATE";
 
@@ -26,6 +27,7 @@ async function patchAnomaly(id: string, action: ActionKey): Promise<void> {
  * cached anomalies query (feed + summary) so the change reflects immediately.
  */
 export function ResolutionActions({ anomaly }: { anomaly: AnomalyDTO }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -68,7 +70,7 @@ export function ResolutionActions({ anomaly }: { anomaly: AnomalyDTO }) {
         className="flex items-center gap-1.5 rounded-lg border border-severity-low/40 px-2.5 py-1.5 text-xs font-medium text-severity-low hover:bg-severity-low/10 disabled:opacity-60"
       >
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-        معالجة
+        {t("anomalies.action.resolve")}
       </button>
       <button
         type="button"
@@ -77,7 +79,7 @@ export function ResolutionActions({ anomaly }: { anomaly: AnomalyDTO }) {
         className="flex items-center gap-1.5 rounded-lg border border-[rgb(var(--border))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--muted))] hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
       >
         <X className="h-3.5 w-3.5" />
-        استبعاد
+        {t("anomalies.action.dismiss")}
       </button>
       <button
         type="button"
@@ -86,10 +88,10 @@ export function ResolutionActions({ anomaly }: { anomaly: AnomalyDTO }) {
         className="flex items-center gap-1.5 rounded-lg border border-severity-high/40 px-2.5 py-1.5 text-xs font-medium text-severity-high hover:bg-severity-high/10 disabled:opacity-60"
       >
         <ArrowUpCircle className="h-3.5 w-3.5" />
-        تصعيد
+        {t("anomalies.action.escalate")}
       </button>
       {mutation.isError && (
-        <span className="text-xs text-severity-critical">تعذّر التحديث</span>
+        <span className="text-xs text-severity-critical">{t("anomalies.action.updateError")}</span>
       )}
     </div>
   );

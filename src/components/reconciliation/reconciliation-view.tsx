@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, ServerCrash, GitCompareArrows } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { ReconciliationResponse } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 import { SessionCard } from "./session-card";
 
 async function fetchReconciliation(
@@ -17,6 +18,7 @@ async function fetchReconciliation(
 }
 
 export function ReconciliationView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const { data, isPending, isError } = useQuery({
     queryKey: ["reconciliation", engagementId],
@@ -27,7 +29,7 @@ export function ReconciliationView() {
     return (
       <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <Loader2 className="h-5 w-5 animate-spin" />
-        جارٍ تحميل جلسات المطابقة...
+        {t("reconciliation.loading")}
       </div>
     );
   }
@@ -36,7 +38,7 @@ export function ReconciliationView() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-severity-critical">
         <ServerCrash className="h-6 w-6" />
-        تعذّر تحميل البيانات. حاول مرة أخرى.
+        {t("reconciliation.error.generic")}
       </div>
     );
   }
@@ -45,7 +47,7 @@ export function ReconciliationView() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <GitCompareArrows className="h-7 w-7" />
-        لا توجد جلسات مطابقة لهذه المهمة بعد.
+        {t("reconciliation.empty")}
       </div>
     );
   }

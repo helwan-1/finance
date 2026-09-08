@@ -4,20 +4,22 @@ import { ArrowLeftRight } from "lucide-react";
 import type { ReconMatchDTO } from "@/lib/ui-types";
 import { MATCH_STATUS_BADGE, MATCH_STATUS_LABELS_AR } from "@/lib/labels";
 import { formatCurrency } from "@/lib/format";
+import { useT } from "@/lib/i18n/use-t";
 
 /** Tabular view of reconciliation matches (bank ⇄ ledger). */
 export function MatchesTable({ matches }: { matches: ReconMatchDTO[] }) {
+  const { t } = useT();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-right text-sm">
         <thead>
           <tr className="border-b text-xs text-[rgb(var(--muted))]">
-            <th className="px-3 py-2 font-medium">مرجع المصدر</th>
-            <th className="px-3 py-2 font-medium">المبلغ</th>
-            <th className="px-3 py-2 font-medium">مرجع الطرف المقابل</th>
-            <th className="px-3 py-2 font-medium">الحالة</th>
-            <th className="px-3 py-2 font-medium">الثقة</th>
-            <th className="px-3 py-2 font-medium">الفرق</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.sourceRef")}</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.amount")}</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.targetRef")}</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.status")}</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.confidence")}</th>
+            <th className="px-3 py-2 font-medium">{t("reconciliation.col.delta")}</th>
           </tr>
         </thead>
         <tbody>

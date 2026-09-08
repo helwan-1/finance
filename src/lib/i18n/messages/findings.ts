@@ -1,4 +1,193 @@
 /** findings message dictionary. Arabic source of truth; English mirrors key-for-key. */
-export const findingsAr = {} as const;
+export const findingsAr = {
+  // Shared
+  "findings.loading": "جارٍ التحميل…",
+  "findings.close": "إغلاق",
+  "findings.cancel": "إلغاء",
+  "findings.action.failed": "فشل تنفيذ العملية",
 
-export const findingsEn: Record<keyof typeof findingsAr, string> = {};
+  // Exception detail
+  "findings.detail.loadError": "فشل تحميل التفاصيل",
+  "findings.detail.loadFailed": "تعذّر تحميل التفاصيل.",
+  "findings.detail.linkedResults": "المؤشّرات المرتبطة:",
+  "findings.detail.concludeHint":
+    "يتطلب نتيجة تدقيق معتمَدة أولاً (أضف نتيجة ← أرسل للمراجعة ← اعتمِدها)",
+  "findings.detail.concludeConfirm":
+    "اعتماد إغلاق المسألة مع نتيجة تدقيق؟ يتطلب وجود نتيجة تدقيق معتمدة.",
+  "findings.detail.concludeBtn": "إغلاق مع نتيجة تدقيق",
+  "findings.detail.dismissPrompt": "سبب الإغلاق دون نتيجة تدقيق:",
+  "findings.detail.dismissBtn": "إغلاق دون نتيجة تدقيق",
+  "findings.detail.reopenPrompt": "سبب إعادة الفتح:",
+  "findings.detail.reopenBtn": "إعادة الفتح",
+  "findings.detail.findingsHeading": "نتائج التدقيق ({count})",
+  "findings.detail.addFinding": "إضافة نتيجة تدقيق",
+  "findings.detail.noFindings": "لا توجد نتائج تدقيق بعد.",
+  "findings.detail.submitConfirm": "إرسال نتيجة التدقيق للمراجعة؟",
+  "findings.detail.approveConfirm": "اعتماد نتيجة التدقيق؟",
+  "findings.detail.returnPrompt": "ملاحظة الإرجاع (اختياري):",
+  "findings.detail.version": "نسخة {n}",
+
+  // Finding block field labels
+  "findings.field.condition": "الحالة",
+  "findings.field.criteria": "المعيار",
+  "findings.field.cause": "السبب",
+  "findings.field.effect": "الأثر",
+  "findings.field.conclusion": "الاستنتاج",
+  "findings.field.recommendation": "التوصية",
+
+  // Finding block actions
+  "findings.finding.edit": "تعديل",
+  "findings.finding.submit": "إرسال للمراجعة",
+  "findings.finding.approve": "اعتماد",
+  "findings.finding.return": "إرجاع",
+
+  // Finding form dialog
+  "findings.form.condition": "الحالة (ما لوحظ)",
+  "findings.form.criteria": "المعيار (ما يجب أن يكون)",
+  "findings.form.cause": "السبب",
+  "findings.form.effect": "الأثر",
+  "findings.form.conclusion": "استنتاج المدقق",
+  "findings.form.recommendation": "التوصية",
+  "findings.form.categoriesLoadError": "فشل تحميل الفئات",
+  "findings.form.saveError": "فشل حفظ نتيجة التدقيق",
+  "findings.form.titleCreate": "نتيجة تدقيق جديدة",
+  "findings.form.titleRevise": "تعديل نتيجة التدقيق (نسخة جديدة)",
+  "findings.form.category": "الفئة",
+  "findings.form.selectCategory": "— اختر الفئة —",
+  "findings.form.observedAmount": "المبلغ المرصود",
+  "findings.form.currency": "العملة",
+  "findings.form.estimatedExposure": "التعرّض المقدَّر",
+  "findings.form.saving": "جارٍ الحفظ…",
+  "findings.form.save": "حفظ",
+
+  // Findings view
+  "findings.view.loadError": "فشل تحميل مسائل التدقيق",
+  "findings.view.allStatuses": "كل الحالات",
+  "findings.view.filterByStatus": "تصفية حسب الحالة",
+  "findings.view.openMatter": "فتح مسألة تدقيق",
+  "findings.view.selectEngagement": "اختر ارتباطًا من الأعلى لعرض مسائل التدقيق.",
+  "findings.view.loadFailed": "تعذّر تحميل البيانات. حاول مرة أخرى.",
+  "findings.view.noMatters": "لا توجد مسائل تدقيق بعد. ابدأ بفتح مسألة من مؤشّر تدقيق.",
+  "findings.view.rowMeta": "{linked} مؤشّر مرتبط · {findings} نتيجة تدقيق",
+
+  // New exception dialog
+  "findings.newException.resultsLoadError": "فشل تحميل مؤشّرات التدقيق",
+  "findings.newException.openError": "فشل فتح مسألة التدقيق",
+  "findings.newException.title": "فتح مسألة تدقيق",
+  "findings.newException.sourceResult": "المؤشّر المصدر",
+  "findings.newException.hint":
+    "كل مسألة تدقيق تبدأ من مؤشّر. يمكنك أيضًا فتح المسألة مباشرةً من شاشة «مؤشّرات التدقيق» على المؤشّر المحدّد.",
+  "findings.newException.loadingResults": "جارٍ تحميل المؤشّرات…",
+  "findings.newException.noResults":
+    "لا توجد مؤشّرات تدقيق لهذا الارتباط بعد. يجب تشغيل محرّك التدقيق (G4) لإنتاج مؤشّرات يمكن فتح مسألة تدقيق منها.",
+  "findings.newException.selectResult": "— اختر مؤشّرًا —",
+  "findings.newException.titleAr": "العنوان (عربي)",
+  "findings.newException.titlePlaceholder": "عنوان المسألة",
+  "findings.newException.titleEn": "العنوان (إنجليزي)",
+  "findings.newException.description": "الوصف",
+  "findings.newException.priority": "الأولوية",
+  "findings.newException.creating": "جارٍ الإنشاء…",
+  "findings.newException.create": "إنشاء",
+  "findings.priority.low": "منخفضة",
+  "findings.priority.medium": "متوسطة",
+  "findings.priority.high": "عالية",
+
+  // Stat cards
+  "findings.stat.open": "مفتوحة",
+  "findings.stat.underInvestigation": "قيد الفحص",
+  "findings.stat.concludedWithFinding": "منتهية بنتيجة تدقيق",
+  "findings.stat.closedNoFinding": "مغلقة دون نتيجة تدقيق",
+} as const;
+
+export const findingsEn: Record<keyof typeof findingsAr, string> = {
+  "findings.loading": "Loading…",
+  "findings.close": "Close",
+  "findings.cancel": "Cancel",
+  "findings.action.failed": "The operation failed",
+
+  "findings.detail.loadError": "Failed to load details",
+  "findings.detail.loadFailed": "Could not load details.",
+  "findings.detail.linkedResults": "Linked indicators:",
+  "findings.detail.concludeHint":
+    "Requires an approved audit finding first (add a finding → submit for review → approve it)",
+  "findings.detail.concludeConfirm":
+    "Conclude the matter with an audit finding? An approved audit finding is required.",
+  "findings.detail.concludeBtn": "Close with an audit finding",
+  "findings.detail.dismissPrompt": "Reason for closing without an audit finding:",
+  "findings.detail.dismissBtn": "Close without an audit finding",
+  "findings.detail.reopenPrompt": "Reason for reopening:",
+  "findings.detail.reopenBtn": "Reopen",
+  "findings.detail.findingsHeading": "Audit findings ({count})",
+  "findings.detail.addFinding": "Add audit finding",
+  "findings.detail.noFindings": "No audit findings yet.",
+  "findings.detail.submitConfirm": "Submit the audit finding for review?",
+  "findings.detail.approveConfirm": "Approve the audit finding?",
+  "findings.detail.returnPrompt": "Return note (optional):",
+  "findings.detail.version": "Version {n}",
+
+  "findings.field.condition": "Condition",
+  "findings.field.criteria": "Criteria",
+  "findings.field.cause": "Cause",
+  "findings.field.effect": "Effect",
+  "findings.field.conclusion": "Conclusion",
+  "findings.field.recommendation": "Recommendation",
+
+  "findings.finding.edit": "Edit",
+  "findings.finding.submit": "Submit for review",
+  "findings.finding.approve": "Approve",
+  "findings.finding.return": "Return",
+
+  "findings.form.condition": "Condition (what was observed)",
+  "findings.form.criteria": "Criteria (what should be)",
+  "findings.form.cause": "Cause",
+  "findings.form.effect": "Effect",
+  "findings.form.conclusion": "Auditor's conclusion",
+  "findings.form.recommendation": "Recommendation",
+  "findings.form.categoriesLoadError": "Failed to load categories",
+  "findings.form.saveError": "Failed to save the audit finding",
+  "findings.form.titleCreate": "New audit finding",
+  "findings.form.titleRevise": "Edit the audit finding (new version)",
+  "findings.form.category": "Category",
+  "findings.form.selectCategory": "— Select category —",
+  "findings.form.observedAmount": "Observed amount",
+  "findings.form.currency": "Currency",
+  "findings.form.estimatedExposure": "Estimated exposure",
+  "findings.form.saving": "Saving…",
+  "findings.form.save": "Save",
+
+  "findings.view.loadError": "Failed to load audit matters",
+  "findings.view.allStatuses": "All statuses",
+  "findings.view.filterByStatus": "Filter by status",
+  "findings.view.openMatter": "Open audit matter",
+  "findings.view.selectEngagement": "Select an engagement above to view audit matters.",
+  "findings.view.loadFailed": "Could not load data. Try again.",
+  "findings.view.noMatters":
+    "No audit matters yet. Start by opening a matter from an audit indicator.",
+  "findings.view.rowMeta": "{linked} linked indicators · {findings} audit findings",
+
+  "findings.newException.resultsLoadError": "Failed to load audit indicators",
+  "findings.newException.openError": "Failed to open the audit matter",
+  "findings.newException.title": "Open audit matter",
+  "findings.newException.sourceResult": "Source indicator",
+  "findings.newException.hint":
+    "Every audit matter starts from an indicator. You can also open the matter directly from the «Audit Indicators» screen on the selected indicator.",
+  "findings.newException.loadingResults": "Loading indicators…",
+  "findings.newException.noResults":
+    "No audit indicators for this engagement yet. The audit engine (G4) must be run to produce indicators from which an audit matter can be opened.",
+  "findings.newException.selectResult": "— Select an indicator —",
+  "findings.newException.titleAr": "Title (Arabic)",
+  "findings.newException.titlePlaceholder": "Matter title",
+  "findings.newException.titleEn": "Title (English)",
+  "findings.newException.description": "Description",
+  "findings.newException.priority": "Priority",
+  "findings.newException.creating": "Creating…",
+  "findings.newException.create": "Create",
+  "findings.priority.low": "Low",
+  "findings.priority.medium": "Medium",
+  "findings.priority.high": "High",
+
+  "findings.stat.open": "Open",
+  "findings.stat.underInvestigation": "Under examination",
+  "findings.stat.concludedWithFinding": "Concluded with an audit finding",
+  "findings.stat.closedNoFinding": "Closed without an audit finding",
+};

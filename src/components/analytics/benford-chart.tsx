@@ -1,6 +1,7 @@
 "use client";
 
 import type { BenfordDigitDTO } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * Grouped bar chart (dependency-free SVG) comparing the observed first-digit
@@ -8,6 +9,7 @@ import type { BenfordDigitDTO } from "@/lib/ui-types";
  * colour; expected bars use a muted tone. Percentages shown on the y-axis.
  */
 export function BenfordChart({ digits }: { digits: BenfordDigitDTO[] }) {
+  const { t } = useT();
   const width = 720;
   const height = 320;
   const padding = { top: 20, right: 16, bottom: 36, left: 40 };
@@ -33,7 +35,7 @@ export function BenfordChart({ digits }: { digits: BenfordDigitDTO[] }) {
         viewBox={`0 0 ${width} ${height}`}
         className="min-w-[640px]"
         role="img"
-        aria-label="مخطط توزيع الرقم الأول مقارنة بقانون بنفورد"
+        aria-label={t("analytics.chart.ariaLabel")}
       >
         {/* Gridlines + y-axis labels */}
         {gridLines.map((p) => (
@@ -74,7 +76,9 @@ export function BenfordChart({ digits }: { digits: BenfordDigitDTO[] }) {
                 className="fill-slate-400/70 dark:fill-slate-500/70"
               >
                 <title>
-                  المتوقع: {(d.expectedProportion * 100).toFixed(1)}%
+                  {t("analytics.tip.expected", {
+                    value: (d.expectedProportion * 100).toFixed(1),
+                  })}
                 </title>
               </rect>
               <rect
@@ -86,8 +90,10 @@ export function BenfordChart({ digits }: { digits: BenfordDigitDTO[] }) {
                 className="fill-brand-500"
               >
                 <title>
-                  الملاحظ: {(d.observedProportion * 100).toFixed(1)}% (
-                  {d.observedCount})
+                  {t("analytics.tip.observed", {
+                    value: (d.observedProportion * 100).toFixed(1),
+                    count: d.observedCount,
+                  })}
                 </title>
               </rect>
               <text
@@ -106,11 +112,11 @@ export function BenfordChart({ digits }: { digits: BenfordDigitDTO[] }) {
       <div className="mt-3 flex items-center justify-center gap-6 text-xs">
         <span className="flex items-center gap-2">
           <span className="inline-block h-3 w-3 rounded-sm bg-brand-500" />
-          الملاحظ
+          {t("analytics.legend.observed")}
         </span>
         <span className="flex items-center gap-2">
           <span className="inline-block h-3 w-3 rounded-sm bg-slate-400/70" />
-          المتوقع (بنفورد)
+          {t("analytics.legend.expected")}
         </span>
       </div>
     </div>

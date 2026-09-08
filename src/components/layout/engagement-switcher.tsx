@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Briefcase, ChevronDown, Check, Plus, Loader2, Users } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { EngagementSummary } from "@/lib/ui-types";
+import { useT } from "@/lib/i18n/use-t";
 import { EngagementMembersDialog } from "./engagement-members-dialog";
 
 interface EngagementsResponse {
@@ -22,6 +23,7 @@ async function fetchEngagements(): Promise<EngagementsResponse> {
  * scopes every downstream query to the selected one (multi-tenant isolation).
  */
 export function EngagementSwitcher() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const setEngagement = useUIStore((s) => s.setEngagement);
   const [open, setOpen] = useState(false);
@@ -64,7 +66,7 @@ export function EngagementSwitcher() {
       >
         <Briefcase className="h-4 w-4 text-brand-600" />
         <span className="max-w-[220px] truncate font-medium">
-          {current?.clientNameAr ?? "لا توجد مهام"}
+          {current?.clientNameAr ?? t("layout.noEngagements")}
         </span>
         {current && (
           <span className="text-[rgb(var(--muted))]">— {current.fiscalYear}</span>
@@ -102,7 +104,7 @@ export function EngagementSwitcher() {
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
               >
                 <Users className="h-4 w-4 text-brand-600" />
-                أعضاء المهمة
+                {t("layout.members")}
               </button>
             )}
             <button
@@ -111,7 +113,7 @@ export function EngagementSwitcher() {
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-700/20"
             >
               <Plus className="h-4 w-4" />
-              مهمة تدقيق جديدة
+              {t("layout.newEngagement")}
             </button>
           </div>
         </div>
@@ -149,6 +151,7 @@ function NewEngagementDialog({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const { t } = useT();
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [clientId, setClientId] = useState("");
   const [clientNameAr, setClientNameAr] = useState("");
@@ -183,7 +186,7 @@ function NewEngagementDialog({
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
-        throw new Error([d.error ?? "فشل الإنشاء", d.detail].filter(Boolean).join(" — "));
+        throw new Error([d.error ?? t("layout.createError"), d.detail].filter(Boolean).join(" — "));
       }
       return (await res.json()) as { engagement: EngagementSummary };
     },
@@ -200,7 +203,7 @@ function NewEngagementDialog({
         onSubmit={(e) => { e.preventDefault(); if (canSubmit) mutation.mutate(); }}
         className="surface w-full max-w-md space-y-4 rounded-2xl border p-5 shadow-card"
       >
-        <h3 className="font-semibold">مهمة تدقيق جديدة</h3>
+        <h3 className="font-semibold">{t("layout.newEngagement")}</h3>
 
         {/* Reuse an existing client (many engagements per client) or add a new one. */}
         <div className="flex gap-2 text-sm">
@@ -210,22 +213,22 @@ function NewEngagementDialog({
             disabled={clients.length === 0}
             className={`flex-1 rounded-lg border px-3 py-1.5 ${mode === "existing" ? "bg-brand-600 text-white" : "hover:bg-black/5 dark:hover:bg-white/5"} disabled:opacity-50`}
           >
-            شركة موجودة
+            {t("layout.existingCompany")}
           </button>
           <button
             type="button"
             onClick={() => setMode("new")}
             className={`flex-1 rounded-lg border px-3 py-1.5 ${mode === "new" ? "bg-brand-600 text-white" : "hover:bg-black/5 dark:hover:bg-white/5"}`}
           >
-            عميل جديد
+            {t("layout.newClient")}
           </button>
         </div>
 
         {mode === "existing" ? (
           <label className="block space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">الشركة</span>
+            <span className="text-[rgb(var(--muted))]">{t("layout.company")}</span>
             <select className={input} value={clientId} onChange={(e) => setClientId(e.target.value)} required>
-              <option value="">— اختر شركة —</option>
+              <option value="">{t("layout.selectCompany")}</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.nameAr}</option>
               ))}
@@ -233,25 +236,25 @@ function NewEngagementDialog({
           </label>
         ) : (
           <label className="block space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">اسم العميل</span>
-            <input className={input} value={clientNameAr} onChange={(e) => setClientNameAr(e.target.value)} placeholder="شركة ..." />
+            <span className="text-[rgb(var(--muted))]">{t("layout.clientName")}</span>
+            <input className={input} value={clientNameAr} onChange={(e) => setClientNameAr(e.target.value)} placeholder={t("layout.clientNamePlaceholder")} />
           </label>
         )}
 
         <label className="block space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">عنوان المهمة</span>
-          <input className={input} value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required placeholder="المراجعة النظامية 2027" />
+          <span className="text-[rgb(var(--muted))]">{t("layout.engagementTitle")}</span>
+          <input className={input} value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required placeholder={t("layout.engagementTitlePlaceholder")} />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-[rgb(var(--muted))]">السنة المالية</span>
+          <span className="text-[rgb(var(--muted))]">{t("layout.fiscalYear")}</span>
           <input className={input} type="number" value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} required />
         </label>
         {mutation.isError && <p className="text-sm text-severity-critical">{(mutation.error as Error).message}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">إلغاء</button>
+          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">{t("layout.cancel")}</button>
           <button type="submit" disabled={!canSubmit} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            إنشاء
+            {t("layout.create")}
           </button>
         </div>
       </form>

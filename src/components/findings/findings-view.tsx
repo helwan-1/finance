@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Gavel, ChevronDown } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/messages";
 import {
   EXCEPTION_STATUS_BADGE,
   EXCEPTION_STATUS_LABELS_AR,
@@ -24,8 +26,8 @@ const selectClass =
 const primaryBtn =
   "inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60";
 
-const STATUS_OPTIONS: { value: string; labelAr: string }[] = [
-  { value: "ALL", labelAr: "كل الحالات" },
+const STATUS_OPTIONS: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
+  { value: "ALL", labelKey: "findings.view.allStatuses" },
   { value: "OPEN", labelAr: EXCEPTION_STATUS_LABELS_AR.OPEN },
   { value: "UNDER_INVESTIGATION", labelAr: EXCEPTION_STATUS_LABELS_AR.UNDER_INVESTIGATION },
   { value: "CONCLUDED_WITH_FINDING", labelAr: EXCEPTION_STATUS_LABELS_AR.CONCLUDED_WITH_FINDING },
@@ -44,6 +46,7 @@ async function fetchExceptions(
 }
 
 export function FindingsView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const [status, setStatus] = useState("ALL");
   const [showNew, setShowNew] = useState(false);
@@ -66,11 +69,11 @@ export function FindingsView() {
           className={selectClass}
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          aria-label="تصفية حسب الحالة"
+          aria-label={t("findings.view.filterByStatus")}
         >
           {STATUS_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.labelAr}
+              {o.labelKey ? t(o.labelKey) : o.labelAr}
             </option>
           ))}
         </select>
@@ -81,18 +84,18 @@ export function FindingsView() {
           disabled={!engagementId}
         >
           <Plus className="h-4 w-4" />
-          فتح مسألة تدقيق
+          {t("findings.view.openMatter")}
         </button>
       </div>
 
       {!engagementId ? (
-        <EmptyCard text="اختر ارتباطًا من الأعلى لعرض مسائل التدقيق." />
+        <EmptyCard text={t("findings.view.selectEngagement")} />
       ) : isPending ? (
-        <EmptyCard text="جارٍ التحميل…" />
+        <EmptyCard text={t("findings.loading")} />
       ) : isError ? (
-        <EmptyCard text="تعذّر تحميل البيانات. حاول مرة أخرى." tone="error" />
+        <EmptyCard text={t("findings.view.loadFailed")} tone="error" />
       ) : exceptions.length === 0 ? (
-        <EmptyCard text="لا توجد مسائل تدقيق بعد. ابدأ بفتح مسألة من مؤشّر تدقيق." />
+        <EmptyCard text={t("findings.view.noMatters")} />
       ) : (
         <div className="space-y-3">
           {exceptions.map((ex) => (
@@ -130,6 +133,7 @@ function ExceptionRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useT();
   return (
     <div className="surface overflow-hidden rounded-xl border shadow-card">
       <button
@@ -143,7 +147,7 @@ function ExceptionRow({
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{ex.titleAr || ex.title}</p>
           <p className="text-xs text-[rgb(var(--muted))]">
-            {ex.linkedResultCount} مؤشّر مرتبط · {ex.findingCount} نتيجة تدقيق
+            {t("findings.view.rowMeta", { linked: ex.linkedResultCount, findings: ex.findingCount })}
           </p>
         </div>
         <span

@@ -6,6 +6,7 @@ import { useUIStore } from "@/store/ui-store";
 import type { AuditLogDTO, AuditLogResponse } from "@/lib/ui-types";
 import { AUDIT_ACTION_LABELS_AR } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
+import { useT } from "@/lib/i18n/use-t";
 
 async function fetchAuditLog(engagementId: string): Promise<AuditLogResponse> {
   const params = new URLSearchParams();
@@ -16,6 +17,7 @@ async function fetchAuditLog(engagementId: string): Promise<AuditLogResponse> {
 }
 
 export function AuditLogView() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const { data, isPending, isError } = useQuery({
     queryKey: ["audit-log", engagementId],
@@ -26,7 +28,7 @@ export function AuditLogView() {
     return (
       <div className="surface flex items-center justify-center gap-2 rounded-xl border p-12 text-[rgb(var(--muted))]">
         <Loader2 className="h-5 w-5 animate-spin" />
-        جارٍ تحميل سجل التدقيق...
+        {t("auditLog.loading")}
       </div>
     );
   }
@@ -35,7 +37,7 @@ export function AuditLogView() {
     return (
       <div className="surface flex flex-col items-center justify-center gap-2 rounded-xl border p-12 text-severity-critical">
         <ServerCrash className="h-6 w-6" />
-        تعذّر تحميل البيانات.
+        {t("auditLog.error.generic")}
       </div>
     );
   }
@@ -44,7 +46,7 @@ export function AuditLogView() {
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-xs text-[rgb(var(--muted))]">
         <Lock className="h-3.5 w-3.5" />
-        سجل غير قابل للتعديل — {data.logs.length} حدث
+        {t("auditLog.immutable", { count: data.logs.length })}
       </div>
 
       <ol className="surface overflow-hidden rounded-xl border shadow-card">

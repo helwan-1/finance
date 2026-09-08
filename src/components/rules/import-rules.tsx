@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, Download, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
+import { useT } from "@/lib/i18n/use-t";
 
 interface ImportResult {
   created: number;
@@ -13,6 +14,7 @@ interface ImportResult {
 
 /** Import rules from a CSV file, and download a ready-to-fill template. */
 export function ImportRules() {
+  const { t } = useT();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -25,11 +27,11 @@ export function ImportRules() {
       form.set("engagementId", engagementId);
       const res = await fetch("/api/rules/import", { method: "POST", body: form });
       const data = (await res.json().catch(() => ({}))) as ImportResult & { error?: string };
-      if (!res.ok && !data.created) throw new Error(data.error ?? "فشل الاستيراد");
+      if (!res.ok && !data.created) throw new Error(data.error ?? t("rules.import.failed"));
       return data;
     },
     onSuccess: (r) => {
-      setMsg(`تم استيراد ${r.created} قاعدة${r.skipped ? ` — تم تخطّي ${r.skipped}` : ""}.`);
+      setMsg(`${t("rules.import.done", { created: r.created })}${r.skipped ? t("rules.import.skipped", { skipped: r.skipped }) : ""}.`);
       void queryClient.invalidateQueries({ queryKey: ["rules"] });
     },
     onError: (e) => setMsg((e as Error).message),
@@ -42,7 +44,7 @@ export function ImportRules() {
         className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
       >
         <Download className="h-4 w-4" />
-        قالب CSV
+        {t("rules.import.template")}
       </a>
       <input
         ref={inputRef}
@@ -62,7 +64,7 @@ export function ImportRules() {
         className="surface flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
       >
         {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-        استيراد CSV
+        {t("rules.import.import")}
       </button>
       {msg && <span className="text-xs text-[rgb(var(--muted))]">{msg}</span>}
     </div>

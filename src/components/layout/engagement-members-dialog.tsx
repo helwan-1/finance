@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, UserPlus, X } from "lucide-react";
 import { ROLE_LABELS_AR } from "@/lib/labels";
+import { useT } from "@/lib/i18n/use-t";
 
 interface MemberDTO {
   userId: string;
@@ -39,6 +40,7 @@ export function EngagementMembersDialog({
   engagementLabel: string;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [pick, setPick] = useState("");
 
@@ -79,14 +81,14 @@ export function EngagementMembersDialog({
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
-        throw new Error([d.error ?? "فشل الإضافة", d.detail].filter(Boolean).join(" — "));
+        throw new Error([d.error ?? t("layout.addError"), d.detail].filter(Boolean).join(" — "));
       }
     },
     onSuccess: async () => {
       setPick("");
       await invalidate();
     },
-    onError: (e) => alert(e instanceof Error ? e.message : "فشل الإضافة"),
+    onError: (e) => alert(e instanceof Error ? e.message : t("layout.addError")),
   });
 
   const removeMutation = useMutation({
@@ -96,11 +98,11 @@ export function EngagementMembersDialog({
       });
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
-        throw new Error([d.error ?? "فشل الإزالة", d.detail].filter(Boolean).join(" — "));
+        throw new Error([d.error ?? t("layout.removeError"), d.detail].filter(Boolean).join(" — "));
       }
     },
     onSuccess: invalidate,
-    onError: (e) => alert(e instanceof Error ? e.message : "فشل الإزالة"),
+    onError: (e) => alert(e instanceof Error ? e.message : t("layout.removeError")),
   });
 
   const busy = addMutation.isPending || removeMutation.isPending;
@@ -113,7 +115,7 @@ export function EngagementMembersDialog({
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="font-semibold">أعضاء المهمة</h3>
+            <h3 className="font-semibold">{t("layout.members")}</h3>
             <p className="text-xs text-[rgb(var(--muted))]">{engagementLabel}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
@@ -122,13 +124,13 @@ export function EngagementMembersDialog({
         </div>
 
         <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-brand-700/15 dark:text-brand-300">
-          العضوية تحدّد من يُعِدّ ويُراجِع ويعتمد نتائج التدقيق. اعتماد نتيجة يتطلب مُراجِعًا عضوًا في المهمة ومختلفًا عن مُعِدّها (فصل المهام).
+          {t("layout.membersInfo")}
         </p>
 
         {/* Add a member */}
         <div className="flex items-end gap-2">
           <label className="block flex-1 space-y-1 text-sm">
-            <span className="text-[rgb(var(--muted))]">إضافة عضو</span>
+            <span className="text-[rgb(var(--muted))]">{t("layout.addMember")}</span>
             <select
               className={input}
               value={pick}
@@ -136,7 +138,7 @@ export function EngagementMembersDialog({
               disabled={busy || candidates.length === 0}
             >
               <option value="">
-                {candidates.length === 0 ? "— لا يوجد مستخدمون متاحون —" : "— اختر مستخدمًا —"}
+                {candidates.length === 0 ? t("layout.noAvailableUsers") : t("layout.selectUser")}
               </option>
               {candidates.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -152,17 +154,17 @@ export function EngagementMembersDialog({
             onClick={() => pick && addMutation.mutate(pick)}
           >
             {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-            إضافة
+            {t("layout.add")}
           </button>
         </div>
 
         {/* Current members */}
         <div className="space-y-2">
-          <h4 className="text-sm font-bold">الأعضاء الحاليون ({members.length})</h4>
+          <h4 className="text-sm font-bold">{t("layout.currentMembers", { count: members.length })}</h4>
           {membersQuery.isPending ? (
-            <p className="text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p>
+            <p className="text-sm text-[rgb(var(--muted))]">{t("layout.loading")}</p>
           ) : members.length === 0 ? (
-            <p className="text-sm text-[rgb(var(--muted))]">لا يوجد أعضاء.</p>
+            <p className="text-sm text-[rgb(var(--muted))]">{t("layout.noMembers")}</p>
           ) : (
             <ul className="divide-y rounded-lg border">
               {members.map((m) => (
@@ -176,10 +178,10 @@ export function EngagementMembersDialog({
                   <button
                     type="button"
                     className="rounded-lg border border-severity-critical/40 p-1.5 text-severity-critical hover:bg-severity-critical/5 disabled:opacity-50"
-                    title={members.length <= 1 ? "لا يمكن إزالة آخر عضو" : "إزالة"}
+                    title={members.length <= 1 ? t("layout.cannotRemoveLast") : t("layout.remove")}
                     disabled={busy || members.length <= 1}
                     onClick={() => {
-                      if (window.confirm(`إزالة ${m.fullNameAr} من المهمة؟`)) {
+                      if (window.confirm(t("layout.confirmRemove", { name: m.fullNameAr }))) {
                         removeMutation.mutate(m.userId);
                       }
                     }}
@@ -193,7 +195,7 @@ export function EngagementMembersDialog({
         </div>
 
         <div className="flex justify-end">
-          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">إغلاق</button>
+          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm">{t("layout.close")}</button>
         </div>
       </div>
     </div>

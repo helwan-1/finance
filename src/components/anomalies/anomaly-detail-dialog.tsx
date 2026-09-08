@@ -14,6 +14,7 @@ import {
   STATUS_LABELS_AR,
 } from "@/lib/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { useT } from "@/lib/i18n/use-t";
 
 type ActionKey = "RESOLVE" | "DISMISS" | "ESCALATE";
 const ACTION_STATUS: Record<ActionKey, AnomalyStatus> = {
@@ -52,6 +53,7 @@ export function AnomalyDetailDialog({
   anomalyId: string;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
 
   const { data, isPending, isError } = useQuery({
@@ -83,7 +85,7 @@ export function AnomalyDetailDialog({
       await queryClient.invalidateQueries({ queryKey: ["anomalies-summary"] });
       onClose();
     },
-    onError: () => alert("تعذّر تحديث الحالة"),
+    onError: () => alert(t("anomalies.detail.updateError")),
   });
 
   const a = data?.anomaly;
@@ -97,16 +99,16 @@ export function AnomalyDetailDialog({
         className="surface max-h-[85vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-2xl border p-5 shadow-card"
       >
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold">تفاصيل الحالة الشاذة</h3>
+          <h3 className="font-semibold">{t("anomalies.detail.title")}</h3>
           <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {isPending ? (
-          <p className="py-8 text-center text-sm text-[rgb(var(--muted))]">جارٍ التحميل…</p>
+          <p className="py-8 text-center text-sm text-[rgb(var(--muted))]">{t("anomalies.detail.loading")}</p>
         ) : isError || !a ? (
-          <p className="py-8 text-center text-sm text-severity-critical">تعذّر تحميل التفاصيل.</p>
+          <p className="py-8 text-center text-sm text-severity-critical">{t("anomalies.detail.loadError")}</p>
         ) : (
           <>
             <div className="space-y-2">
@@ -124,32 +126,32 @@ export function AnomalyDetailDialog({
               </div>
               <p className="text-sm text-[rgb(var(--foreground))]">{a.descriptionAr}</p>
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--muted))]">
-                <span>الدرجة: <span className="font-medium text-[rgb(var(--foreground))]">{Math.round(Number.parseFloat(a.score))}</span></span>
-                <span>اكتُشفت: <span className="font-medium text-[rgb(var(--foreground))]">{formatDateTime(a.detectedAt)}</span></span>
+                <span>{t("anomalies.detail.score")} <span className="font-medium text-[rgb(var(--foreground))]">{Math.round(Number.parseFloat(a.score))}</span></span>
+                <span>{t("anomalies.detail.detectedAt")} <span className="font-medium text-[rgb(var(--foreground))]">{formatDateTime(a.detectedAt)}</span></span>
               </div>
             </div>
 
             {/* Underlying transaction */}
             {a.transaction && (
-              <Section title="المعاملة المرتبطة">
-                <Field label="المرجع" value={a.transaction.reference} />
-                <Field label="الوصف" value={a.transaction.description} />
-                <Field label="المبلغ" value={formatCurrency(a.transaction.amount, a.transaction.currency)} />
+              <Section title={t("anomalies.detail.sectionTransaction")}>
+                <Field label={t("anomalies.detail.fieldReference")} value={a.transaction.reference} />
+                <Field label={t("anomalies.detail.fieldDescription")} value={a.transaction.description} />
+                <Field label={t("anomalies.detail.fieldAmount")} value={formatCurrency(a.transaction.amount, a.transaction.currency)} />
                 {a.transaction.vatAmount && (
-                  <Field label="ضريبة القيمة المضافة" value={formatCurrency(a.transaction.vatAmount, a.transaction.currency)} />
+                  <Field label={t("anomalies.detail.fieldVat")} value={formatCurrency(a.transaction.vatAmount, a.transaction.currency)} />
                 )}
-                <Field label="النوع" value={TX_TYPE_AR[a.transaction.type] ?? a.transaction.type} />
-                <Field label="المصدر" value={TX_SOURCE_AR[a.transaction.source] ?? a.transaction.source} />
-                {a.transaction.counterparty && <Field label="الطرف المقابل" value={a.transaction.counterparty} />}
-                {a.transaction.account && <Field label="الحساب" value={a.transaction.account} />}
-                <Field label="تاريخ القيد" value={formatDateTime(a.transaction.postedAt)} />
-                <Field label="تاريخ القيمة" value={formatDateTime(a.transaction.valueDate)} />
+                <Field label={t("anomalies.detail.fieldType")} value={TX_TYPE_AR[a.transaction.type] ?? a.transaction.type} />
+                <Field label={t("anomalies.detail.fieldSource")} value={TX_SOURCE_AR[a.transaction.source] ?? a.transaction.source} />
+                {a.transaction.counterparty && <Field label={t("anomalies.detail.fieldCounterparty")} value={a.transaction.counterparty} />}
+                {a.transaction.account && <Field label={t("anomalies.detail.fieldAccount")} value={a.transaction.account} />}
+                <Field label={t("anomalies.detail.fieldPostedAt")} value={formatDateTime(a.transaction.postedAt)} />
+                <Field label={t("anomalies.detail.fieldValueDate")} value={formatDateTime(a.transaction.valueDate)} />
               </Section>
             )}
 
             {/* Structured evidence */}
             {a.evidence && Object.keys(a.evidence).length > 0 && (
-              <Section title="الأدلة">
+              <Section title={t("anomalies.detail.sectionEvidence")}>
                 {Object.entries(a.evidence).map(([k, v]) => (
                   <Field key={k} label={k} value={renderValue(v)} />
                 ))}
@@ -158,10 +160,10 @@ export function AnomalyDetailDialog({
 
             {/* Resolution history */}
             {(a.resolvedAt || a.resolutionNote) && (
-              <Section title="المعالجة">
-                {a.resolvedByName && <Field label="بواسطة" value={a.resolvedByName} />}
-                {a.resolvedAt && <Field label="التاريخ" value={formatDateTime(a.resolvedAt)} />}
-                {a.resolutionNote && <Field label="ملاحظة" value={a.resolutionNote} />}
+              <Section title={t("anomalies.detail.sectionResolution")}>
+                {a.resolvedByName && <Field label={t("anomalies.detail.fieldBy")} value={a.resolvedByName} />}
+                {a.resolvedAt && <Field label={t("anomalies.detail.fieldDate")} value={formatDateTime(a.resolvedAt)} />}
+                {a.resolutionNote && <Field label={t("anomalies.detail.fieldNote")} value={a.resolutionNote} />}
               </Section>
             )}
 
@@ -175,7 +177,7 @@ export function AnomalyDetailDialog({
                   className="flex items-center gap-1.5 rounded-lg border border-severity-low/40 px-3 py-1.5 text-xs font-medium text-severity-low hover:bg-severity-low/10 disabled:opacity-60"
                 >
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  معالجة
+                  {t("anomalies.action.resolve")}
                 </button>
                 <button
                   type="button"
@@ -184,7 +186,7 @@ export function AnomalyDetailDialog({
                   className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-[rgb(var(--muted))] hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
                 >
                   <X className="h-3.5 w-3.5" />
-                  استبعاد
+                  {t("anomalies.action.dismiss")}
                 </button>
                 <button
                   type="button"
@@ -193,7 +195,7 @@ export function AnomalyDetailDialog({
                   className="flex items-center gap-1.5 rounded-lg border border-severity-high/40 px-3 py-1.5 text-xs font-medium text-severity-high hover:bg-severity-high/10 disabled:opacity-60"
                 >
                   <ArrowUpCircle className="h-3.5 w-3.5" />
-                  تصعيد
+                  {t("anomalies.action.escalate")}
                 </button>
               </div>
             )}
