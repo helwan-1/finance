@@ -5,6 +5,7 @@ import { useUIStore } from "@/store/ui-store";
 import { useT } from "@/lib/i18n/use-t";
 import { EngagementSwitcher } from "./engagement-switcher";
 import { LanguageSwitcher } from "./language-switcher";
+import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import { LiveIndicator } from "./live-indicator";
 
@@ -38,6 +39,7 @@ export function Header() {
           />
         </div>
         <LanguageSwitcher />
+        <ThemeToggle />
         <button
           type="button"
           className="relative rounded-lg p-2 hover:bg-black/5 dark:hover:bg-white/5"

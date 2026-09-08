@@ -13,15 +13,16 @@
   --muted: 90 105 122;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Softer dark palette: lifted background off near-black, calmer foreground. */
-    --background: 14 19 30;
-    --foreground: 213 221 233;
-    --card: 22 29 43;
-    --border: 37 47 64;
-    --muted: 150 165 184;
-  }
+/* Dark palette — driven by the `dark` class on <html>. A no-flash script sets
+   that class from the saved choice, or the OS preference when none is saved, so
+   both the CSS tokens here and Tailwind's class-based `dark:` utilities stay in
+   sync (softer dark: lifted off near-black, calmer foreground). */
+:root.dark {
+  --background: 14 19 30;
+  --foreground: 213 221 233;
+  --card: 22 29 43;
+  --border: 37 47 64;
+  --muted: 150 165 184;
 }
 
 html {
@@ -51,7 +52,10 @@ body {
 
 /* Print / "Export PDF": a clean, light report of the anomalies feed. */
 @media print {
-  :root {
+  /* Always print a clean light report, even if the app is in dark mode
+     (`:root.dark` would otherwise outrank a bare `:root` here). */
+  :root,
+  :root.dark {
     --background: 255 255 255;
     --foreground: 15 23 42;
     --card: 255 255 255;
