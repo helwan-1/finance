@@ -5,12 +5,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ServerCrash, Play, Plus, Trash2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { RuleDTO, RulesResponse, RunRulesResponse } from "@/lib/ui-types";
-import {
-  RULE_CATEGORY_LABELS_AR,
-  SEVERITY_BADGE,
-  SEVERITY_LABELS_AR,
-} from "@/lib/labels";
+import { SEVERITY_BADGE } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 import { AddRuleForm } from "./add-rule-form";
 import { ImportRules } from "./import-rules";
 
@@ -26,6 +23,7 @@ const CATEGORY_ORDER = ["NUMERIC", "PARTY", "TIMING", "AGGREGATE"] as const;
 
 export function RulesView() {
   const { t } = useT();
+  const labels = useLabels();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -126,7 +124,7 @@ export function RulesView() {
           return (
             <section key={cat} className="space-y-2">
               <h2 className="text-sm font-semibold text-[rgb(var(--muted))]">
-                {RULE_CATEGORY_LABELS_AR[cat]}
+                {labels.ruleCategory[cat]}
               </h2>
               <div className="surface divide-y overflow-hidden rounded-xl border shadow-card">
                 {rules.map((r) => (
@@ -158,7 +156,8 @@ function RuleRow({
   onDelete: () => void;
   busy: boolean;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
+  const labels = useLabels();
   return (
     <div className="flex items-start gap-3 p-4">
       <button
@@ -180,9 +179,9 @@ function RuleRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{rule.nameAr}</span>
+          <span className="font-medium">{locale === "en" ? rule.name : rule.nameAr}</span>
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[rule.severity]}`}>
-            {SEVERITY_LABELS_AR[rule.severity]}
+            {labels.severity[rule.severity]}
           </span>
           <span dir="ltr" className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] text-[rgb(var(--muted))] dark:bg-white/5">
             {rule.code}

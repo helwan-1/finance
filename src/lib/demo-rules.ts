@@ -9,6 +9,7 @@ import type { RuleDTO } from "./ui-types";
 export const DEMO_RULES: RuleDTO[] = PROFESSIONAL_RULES.map((r) => ({
   id: r.code,
   code: r.code,
+  name: r.name,
   nameAr: r.nameAr,
   category: r.category,
   severity: r.severity,

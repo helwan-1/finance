@@ -209,6 +209,7 @@ export type RuleScope = "FIRM" | "ENGAGEMENT";
 export interface RuleDTO {
   id: string;
   code: string;
+  name: string;
   nameAr: string;
   category: RuleCategory;
   severity: AnomalySeverity;

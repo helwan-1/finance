@@ -11,6 +11,7 @@ const CATEGORIES: RuleCategory[] = ["NUMERIC", "PARTY", "TIMING", "AGGREGATE"];
 function toDTO(r: {
   id: string;
   code: string;
+  name: string;
   nameAr: string;
   category: RuleCategory;
   severity: string;
@@ -22,6 +23,7 @@ function toDTO(r: {
   return {
     id: r.id,
     code: r.code,
+    name: r.name,
     nameAr: r.nameAr,
     category: r.category,
     severity: r.severity as RuleDTO["severity"],

@@ -5,13 +5,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Plus, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 import type { MessageKey } from "@/lib/i18n/messages";
 import {
-  SEVERITY_LABELS_AR,
   SEVERITY_BADGE,
-  DISPOSITION_STATE_LABELS_AR,
   DISPOSITION_STATE_BADGE,
-  DISPOSITION_ACTION_LABELS_AR,
 } from "@/lib/labels";
 import type {
   AuditResultDTO,
@@ -34,15 +32,6 @@ const ACTIONS: DispositionActionKind[] = [
   "MARK_EXPLAINED",
   "MARK_NOT_RELEVANT",
   "MARK_FALSE_POSITIVE",
-];
-
-const STATE_FILTER: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
-  { value: "ALL", labelKey: "auditResults.allStates" },
-  { value: "UNREVIEWED", labelAr: DISPOSITION_STATE_LABELS_AR.UNREVIEWED },
-  { value: "UNDER_REVIEW", labelAr: DISPOSITION_STATE_LABELS_AR.UNDER_REVIEW },
-  { value: "INVESTIGATING", labelAr: DISPOSITION_STATE_LABELS_AR.INVESTIGATING },
-  { value: "DISPOSED", labelAr: DISPOSITION_STATE_LABELS_AR.DISPOSED },
-  { value: "LINKED", labelAr: DISPOSITION_STATE_LABELS_AR.LINKED },
 ];
 
 async function fetchResults(engagementId: string): Promise<AuditResultsResponse> {
@@ -76,6 +65,15 @@ async function fetchResultDetail(id: string): Promise<ResultDetailDTO> {
 
 export function AuditResultsView() {
   const { t } = useT();
+  const labels = useLabels();
+  const STATE_FILTER: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
+    { value: "ALL", labelKey: "auditResults.allStates" },
+    { value: "UNREVIEWED", labelAr: labels.dispositionState.UNREVIEWED },
+    { value: "UNDER_REVIEW", labelAr: labels.dispositionState.UNDER_REVIEW },
+    { value: "INVESTIGATING", labelAr: labels.dispositionState.INVESTIGATING },
+    { value: "DISPOSED", labelAr: labels.dispositionState.DISPOSED },
+    { value: "LINKED", labelAr: labels.dispositionState.LINKED },
+  ];
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const [stateFilter, setStateFilter] = useState("ALL");
@@ -151,7 +149,7 @@ export function AuditResultsView() {
         <NewExceptionDialog
           engagementId={engagementId}
           presetResultId={exceptionFor.id}
-          presetResultLabel={`${exceptionFor.resultCode} · ${SEVERITY_LABELS_AR[exceptionFor.severity]}`}
+          presetResultLabel={`${exceptionFor.resultCode} · ${labels.severity[exceptionFor.severity]}`}
           onClose={() => setExceptionFor(null)}
         />
       )}
@@ -171,8 +169,9 @@ function ResultRow({
   onCreateException: () => void;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   const state = r.dispositionState as DispositionStateKind;
-  const stateLabel = DISPOSITION_STATE_LABELS_AR[state] ?? r.dispositionState;
+  const stateLabel = labels.dispositionState[state] ?? r.dispositionState;
   const stateBadge =
     DISPOSITION_STATE_BADGE[state] ??
     "bg-black/5 text-[rgb(var(--muted))] ring-black/10 dark:bg-white/5";
@@ -205,7 +204,7 @@ function ResultRow({
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[r.severity]}`}
         >
-          {SEVERITY_LABELS_AR[r.severity]}
+          {labels.severity[r.severity]}
         </span>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${stateBadge}`}
@@ -236,7 +235,7 @@ function ResultRow({
             <option value="">{t("auditResults.judgmentPlaceholder")}</option>
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
-                {DISPOSITION_ACTION_LABELS_AR[a]}
+                {labels.dispositionAction[a]}
               </option>
             ))}
           </select>
@@ -257,7 +256,7 @@ function ResultRow({
         <div className="border-t p-4 text-sm">
           <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--muted))]">
             <span>{t("auditResults.detail.type", { kind: r.resultKind })}</span>
-            <span>{t("auditResults.detail.severity", { severity: SEVERITY_LABELS_AR[r.severity] })}</span>
+            <span>{t("auditResults.detail.severity", { severity: labels.severity[r.severity] })}</span>
             <span>{t("auditResults.detail.score", { score: r.score })}</span>
             {detail.data?.resultSemanticFingerprint && (
               <span className="font-mono">{t("auditResults.detail.fingerprint", { fp: detail.data.resultSemanticFingerprint.slice(0, 16) })}</span>

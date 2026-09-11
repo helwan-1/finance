@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, LogIn, ChevronDown } from "lucide-react";
-import { ROLE_LABELS_AR } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 interface MeResponse {
   user: {
@@ -24,6 +24,7 @@ async function fetchMe(): Promise<MeResponse> {
 
 export function UserMenu() {
   const { t } = useT();
+  const labels = useLabels();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -41,7 +42,7 @@ export function UserMenu() {
   const user = data?.user ?? null;
   // Demo mode (no session): show a representative name so the shell looks real.
   const nameAr = user?.fullNameAr ?? t("auth.demoName");
-  const roleAr = user ? (ROLE_LABELS_AR[user.role] ?? user.role) : t("auth.demoRole");
+  const roleAr = user ? (labels.role[user.role] ?? user.role) : t("auth.demoRole");
   const initial = nameAr.charAt(0);
 
   async function logout() {

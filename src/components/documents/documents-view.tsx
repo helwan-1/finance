@@ -11,13 +11,10 @@ import {
 } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { DocumentDTO, DocumentsResponse } from "@/lib/ui-types";
-import {
-  DOCUMENT_STATUS_BADGE,
-  DOCUMENT_STATUS_LABELS_AR,
-  DOCUMENT_TYPE_LABELS_AR,
-} from "@/lib/labels";
+import { DOCUMENT_STATUS_BADGE } from "@/lib/labels";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 import { UploadButton } from "./upload-button";
 import { ImportTransactions } from "./import-transactions";
 import { ImportedDatasets } from "./imported-datasets";
@@ -100,6 +97,7 @@ function DocumentCard({
   Icon: typeof FileText;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   return (
     <article className="surface flex flex-col gap-3 rounded-xl border p-4 shadow-card">
       <div className="flex items-start gap-3">
@@ -111,13 +109,13 @@ function DocumentCard({
             {doc.fileName}
           </h3>
           <p className="text-xs text-[rgb(var(--muted))]">
-            {DOCUMENT_TYPE_LABELS_AR[doc.type]} · {formatBytes(doc.sizeBytes)}
+            {labels.documentType[doc.type]} · {formatBytes(doc.sizeBytes)}
           </p>
         </div>
         <span
           className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${DOCUMENT_STATUS_BADGE[doc.status]}`}
         >
-          {DOCUMENT_STATUS_LABELS_AR[doc.status]}
+          {labels.documentStatus[doc.status]}
         </span>
       </div>
 

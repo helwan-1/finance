@@ -202,3 +202,131 @@ export const DISPOSITION_ACTION_LABELS_AR: Record<DispositionActionKind, string>
   MARK_EXPLAINED: "مُفسَّرة",
   REQUIRE_INVESTIGATION: "تتطلّب فحصًا",
 };
+
+// ---------------------------------------------------------------------------
+// English label maps (mirror the *_LABELS_AR maps key-for-key). Consumed via the
+// locale-aware useLabels() hook (src/lib/i18n/use-labels.ts). Badge/color maps
+// above are locale-independent and shared by both languages.
+// ---------------------------------------------------------------------------
+
+export const SEVERITY_LABELS_EN: Record<AnomalySeverity, string> = {
+  CRITICAL: "Critical",
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+  INFO: "Info",
+};
+
+export const STATUS_LABELS_EN: Record<AnomalyStatus, string> = {
+  OPEN: "Open",
+  IN_REVIEW: "In review",
+  RESOLVED: "Resolved",
+  DISMISSED: "Dismissed",
+  ESCALATED: "Escalated",
+};
+
+export const RULE_LABELS_EN: Record<AnomalyRuleCode, string> = {
+  BENFORD_DEVIATION: "Benford's law deviation",
+  DUPLICATE_EXACT: "Exact duplicate",
+  DUPLICATE_NEAR: "Near duplicate",
+  OFF_HOURS_ENTRY: "Off-hours entry",
+  WEEKEND_ENTRY: "Weekend entry",
+  VAT_DISCREPANCY: "VAT discrepancy",
+  ROUND_AMOUNT: "Round amount",
+  UNRECONCILED: "Unreconciled",
+  THRESHOLD_AVOIDANCE: "Authorization-limit avoidance",
+  GAP_SEQUENCE: "Sequence gap",
+  DENYLIST_PARTY: "Denylisted party",
+  MISSING_FIELD: "Missing field",
+  BACKDATED_ENTRY: "Backdated entry",
+  CUSTOM_RULE: "Custom rule",
+};
+
+export const MATCH_STATUS_LABELS_EN: Record<ReconMatchStatus, string> = {
+  MATCHED: "Matched",
+  PARTIAL: "Partial match",
+  UNMATCHED: "Unmatched",
+};
+
+export const RULE_CATEGORY_LABELS_EN: Record<string, string> = {
+  NUMERIC: "Numeric limits & comparisons",
+  PARTY: "Parties & data",
+  TIMING: "Timing & dates",
+  AGGREGATE: "Aggregation & frequency",
+};
+
+export const ROLE_LABELS_EN: Record<string, string> = {
+  ADMIN: "Administrator",
+  PARTNER: "Partner",
+  MANAGER: "Engagement manager",
+  SENIOR: "Senior auditor",
+  STAFF: "Staff auditor",
+  REVIEWER: "Reviewer",
+};
+
+export const DOCUMENT_TYPE_LABELS_EN: Record<DocumentType, string> = {
+  INVOICE: "Invoice",
+  BANK_STATEMENT: "Bank statement",
+  VAT_RETURN: "VAT return",
+  GENERAL_LEDGER: "General ledger",
+  PURCHASE_ORDER: "Purchase order",
+  RECEIPT: "Receipt",
+  OTHER: "Other",
+};
+
+export const DOCUMENT_STATUS_LABELS_EN: Record<DocumentStatus, string> = {
+  UPLOADED: "Uploaded",
+  PROCESSING: "Processing",
+  PARSED: "Parsed",
+  FAILED: "Failed",
+  ARCHIVED: "Archived",
+};
+
+export const AUDIT_ACTION_LABELS_EN: Record<string, string> = {
+  VIEW_DOCUMENT: "View document",
+  DOWNLOAD_DOCUMENT: "Download document",
+  RESOLVE_ANOMALY: "Resolve anomaly",
+  DISMISS_ANOMALY: "Dismiss anomaly",
+  ESCALATE_ANOMALY: "Escalate anomaly",
+  EXPORT_DATA: "Export data",
+  RUN_RECONCILIATION: "Run reconciliation",
+  RUN_ANALYSIS: "Run analysis",
+  LOGIN: "Sign in",
+  LOGOUT: "Sign out",
+};
+
+export const EXCEPTION_STATUS_LABELS_EN: Record<ExceptionStatus, string> = {
+  OPEN: "Open",
+  UNDER_INVESTIGATION: "Under investigation",
+  CONCLUDED_WITH_FINDING: "Concluded with finding",
+  CLOSED_NO_FINDING: "Closed without finding",
+};
+
+export const FINDING_STATUS_LABELS_EN: Record<FindingStatus, string> = {
+  DRAFT: "Draft",
+  IN_REVIEW: "In review",
+  CONCLUDED: "Approved",
+  WITHDRAWN: "Withdrawn",
+};
+
+export const MATTER_PRIORITY_LABELS_EN: Record<MatterPriority, string> = {
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
+};
+
+export const DISPOSITION_STATE_LABELS_EN: Record<DispositionStateKind, string> = {
+  UNREVIEWED: "Unreviewed",
+  UNDER_REVIEW: "Under review",
+  DISPOSED: "Disposed",
+  INVESTIGATING: "Investigating",
+  LINKED: "Linked to matter",
+};
+
+export const DISPOSITION_ACTION_LABELS_EN: Record<DispositionActionKind, string> = {
+  MARK_UNDER_REVIEW: "Mark under review",
+  MARK_NOT_RELEVANT: "Not relevant",
+  MARK_FALSE_POSITIVE: "False positive",
+  MARK_EXPLAINED: "Explained",
+  REQUIRE_INVESTIGATION: "Requires investigation",
+};

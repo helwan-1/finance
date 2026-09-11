@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, ServerCrash, ScrollText, Lock } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { AuditLogDTO, AuditLogResponse } from "@/lib/ui-types";
-import { AUDIT_ACTION_LABELS_AR } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 async function fetchAuditLog(engagementId: string): Promise<AuditLogResponse> {
   const params = new URLSearchParams();
@@ -59,7 +59,8 @@ export function AuditLogView() {
 }
 
 function LogRow({ log, isLast }: { log: AuditLogDTO; isLast: boolean }) {
-  const actionLabel = AUDIT_ACTION_LABELS_AR[log.action] ?? log.action;
+  const labels = useLabels();
+  const actionLabel = labels.auditAction[log.action] ?? log.action;
   return (
     <li
       className={`flex items-start gap-3 p-4 ${

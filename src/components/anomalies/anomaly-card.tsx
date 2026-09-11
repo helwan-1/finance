@@ -20,13 +20,11 @@ import {
 } from "lucide-react";
 import type { AnomalyDTO, AnomalyRuleCode } from "@/lib/ui-types";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 import { AnomalyDetailDialog } from "./anomaly-detail-dialog";
 import {
-  RULE_LABELS_AR,
   SEVERITY_BADGE,
   SEVERITY_BAR,
-  SEVERITY_LABELS_AR,
-  STATUS_LABELS_AR,
 } from "@/lib/labels";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { ResolutionActions } from "./resolution-actions";
@@ -52,6 +50,7 @@ const DEFAULT_ICON: LucideIcon = SlidersHorizontal;
 
 export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
   const { t } = useT();
+  const labels = useLabels();
   const Icon = RULE_ICON[anomaly.ruleCode] ?? DEFAULT_ICON;
   const [showDetail, setShowDetail] = useState(false);
 
@@ -73,13 +72,13 @@ export function AnomalyCard({ anomaly }: { anomaly: AnomalyDTO }) {
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[anomaly.severity]}`}
           >
-            {SEVERITY_LABELS_AR[anomaly.severity]}
+            {labels.severity[anomaly.severity]}
           </span>
           <span className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] text-[rgb(var(--muted))] dark:bg-white/5">
-            {RULE_LABELS_AR[anomaly.ruleCode]}
+            {labels.rule[anomaly.ruleCode]}
           </span>
           <span className="rounded-full border px-2 py-0.5 text-[11px] text-[rgb(var(--muted))]">
-            {STATUS_LABELS_AR[anomaly.status]}
+            {labels.status[anomaly.status]}
           </span>
         </div>
 

@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, UserPlus, X } from "lucide-react";
-import { ROLE_LABELS_AR } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 interface MemberDTO {
   userId: string;
@@ -41,6 +41,7 @@ export function EngagementMembersDialog({
   onClose: () => void;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   const queryClient = useQueryClient();
   const [pick, setPick] = useState("");
 
@@ -142,7 +143,7 @@ export function EngagementMembersDialog({
               </option>
               {candidates.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.fullNameAr} — {ROLE_LABELS_AR[u.role] ?? u.role}
+                  {u.fullNameAr} — {labels.role[u.role] ?? u.role}
                 </option>
               ))}
             </select>
@@ -172,7 +173,7 @@ export function EngagementMembersDialog({
                   <div className="min-w-0">
                     <span className="block truncate text-sm font-medium">{m.fullNameAr}</span>
                     <span className="block truncate text-xs text-[rgb(var(--muted))]">
-                      {m.email} · {ROLE_LABELS_AR[m.role] ?? m.role}
+                      {m.email} · {labels.role[m.role] ?? m.role}
                     </span>
                   </div>
                   <button

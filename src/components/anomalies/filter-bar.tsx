@@ -7,12 +7,8 @@ import type {
   AnomalySeverity,
   AnomalyStatus,
 } from "@/lib/ui-types";
-import {
-  RULE_LABELS_AR,
-  SEVERITY_LABELS_AR,
-  STATUS_LABELS_AR,
-} from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 const SEVERITIES: AnomalySeverity[] = [
   "CRITICAL",
@@ -28,8 +24,6 @@ const STATUSES: AnomalyStatus[] = [
   "DISMISSED",
   "ESCALATED",
 ];
-const RULES = Object.keys(RULE_LABELS_AR) as AnomalyRuleCode[];
-
 const selectClass =
   "surface rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
 
@@ -39,6 +33,8 @@ const selectClass =
  */
 export function FilterBar() {
   const { t } = useT();
+  const labels = useLabels();
+  const RULES = Object.keys(labels.rule) as AnomalyRuleCode[];
   const filters = useUIStore((s) => s.filters);
   const setFilters = useUIStore((s) => s.setFilters);
   const resetFilters = useUIStore((s) => s.resetFilters);
@@ -77,7 +73,7 @@ export function FilterBar() {
           <option value="ALL">{t("anomalies.filter.all")}</option>
           {SEVERITIES.map((s) => (
             <option key={s} value={s}>
-              {SEVERITY_LABELS_AR[s]}
+              {labels.severity[s]}
             </option>
           ))}
         </select>
@@ -98,7 +94,7 @@ export function FilterBar() {
           <option value="ALL">{t("anomalies.filter.all")}</option>
           {RULES.map((r) => (
             <option key={r} value={r}>
-              {RULE_LABELS_AR[r]}
+              {labels.rule[r]}
             </option>
           ))}
         </select>
@@ -119,7 +115,7 @@ export function FilterBar() {
           <option value="ALL">{t("anomalies.filter.all")}</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>
-              {STATUS_LABELS_AR[s]}
+              {labels.status[s]}
             </option>
           ))}
         </select>

@@ -4,10 +4,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, FileText } from "lucide-react";
 import { useT } from "@/lib/i18n/use-t";
-import {
-  FINDING_STATUS_BADGE,
-  FINDING_STATUS_LABELS_AR,
-} from "@/lib/labels";
+import { useLabels } from "@/lib/i18n/use-labels";
+import { FINDING_STATUS_BADGE } from "@/lib/labels";
 import type {
   ExceptionDetailResponse,
   ExceptionDetailDTO,
@@ -276,6 +274,7 @@ function FindingBlock({
   onReturn: () => void;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   const v: FindingVersionDTO | null = finding.currentVersion;
   const isDraft = finding.status === "DRAFT";
   const inReview = finding.status === "IN_REVIEW";
@@ -287,7 +286,7 @@ function FindingBlock({
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${FINDING_STATUS_BADGE[finding.status]}`}
         >
-          {FINDING_STATUS_LABELS_AR[finding.status]}
+          {labels.findingStatus[finding.status]}
         </span>
         {v && (
           <span className="text-[11px] text-[rgb(var(--muted))]">{t("findings.detail.version", { n: v.versionNo })}</span>

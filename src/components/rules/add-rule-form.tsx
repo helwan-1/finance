@@ -5,8 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, X } from "lucide-react";
 import { useUIStore } from "@/store/ui-store";
 import type { AnomalySeverity, RuleCategory, RuleScope } from "@/lib/ui-types";
-import { RULE_CATEGORY_LABELS_AR, SEVERITY_LABELS_AR } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 type RuleType =
   | "field_compare"
@@ -42,6 +42,7 @@ const input = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none f
 
 export function AddRuleForm({ onClose }: { onClose: () => void }) {
   const { t } = useT();
+  const labels = useLabels();
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
 
@@ -145,14 +146,14 @@ export function AddRuleForm({ onClose }: { onClose: () => void }) {
           <span className="text-[rgb(var(--muted))]">{t("rules.form.type")}</span>
           <select className={input} value={type} onChange={(e) => setType(e.target.value as RuleType)}>
             {(Object.keys(TYPE_LABEL_KEYS) as RuleType[]).map((rt) => (
-              <option key={rt} value={rt}>{t(TYPE_LABEL_KEYS[rt])} — {RULE_CATEGORY_LABELS_AR[TYPE_CATEGORY[rt]]}</option>
+              <option key={rt} value={rt}>{t(TYPE_LABEL_KEYS[rt])} — {labels.ruleCategory[TYPE_CATEGORY[rt]]}</option>
             ))}
           </select>
         </label>
         <label className="space-y-1 text-sm">
           <span className="text-[rgb(var(--muted))]">{t("rules.form.severity")}</span>
           <select className={input} value={severity} onChange={(e) => setSeverity(e.target.value as AnomalySeverity)}>
-            {SEVERITIES.map((s) => <option key={s} value={s}>{SEVERITY_LABELS_AR[s]}</option>)}
+            {SEVERITIES.map((s) => <option key={s} value={s}>{labels.severity[s]}</option>)}
           </select>
         </label>
         <label className="space-y-1 text-sm">

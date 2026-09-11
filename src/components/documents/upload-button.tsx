@@ -9,10 +9,8 @@ import type {
   DocumentType,
   DocumentsResponse,
 } from "@/lib/ui-types";
-import { DOCUMENT_TYPE_LABELS_AR } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
-
-const TYPE_OPTIONS = Object.keys(DOCUMENT_TYPE_LABELS_AR) as DocumentType[];
+import { useLabels } from "@/lib/i18n/use-labels";
 
 async function uploadDocument(input: {
   engagementId: string;
@@ -35,6 +33,8 @@ async function uploadDocument(input: {
  */
 export function UploadButton() {
   const { t } = useT();
+  const labels = useLabels();
+  const TYPE_OPTIONS = Object.keys(labels.documentType) as DocumentType[];
   const engagementId = useUIStore((s) => s.engagementId);
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +71,7 @@ export function UploadButton() {
       >
         {TYPE_OPTIONS.map((t) => (
           <option key={t} value={t}>
-            {DOCUMENT_TYPE_LABELS_AR[t]}
+            {labels.documentType[t]}
           </option>
         ))}
       </select>

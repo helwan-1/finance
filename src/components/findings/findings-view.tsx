@@ -8,10 +8,9 @@ import { useT } from "@/lib/i18n/use-t";
 import type { MessageKey } from "@/lib/i18n/messages";
 import {
   EXCEPTION_STATUS_BADGE,
-  EXCEPTION_STATUS_LABELS_AR,
   MATTER_PRIORITY_BADGE,
-  MATTER_PRIORITY_LABELS_AR,
 } from "@/lib/labels";
+import { useLabels } from "@/lib/i18n/use-labels";
 import type {
   ExceptionDTO,
   ExceptionStatus,
@@ -26,14 +25,6 @@ const selectClass =
 const primaryBtn =
   "inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60";
 
-const STATUS_OPTIONS: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
-  { value: "ALL", labelKey: "findings.view.allStatuses" },
-  { value: "OPEN", labelAr: EXCEPTION_STATUS_LABELS_AR.OPEN },
-  { value: "UNDER_INVESTIGATION", labelAr: EXCEPTION_STATUS_LABELS_AR.UNDER_INVESTIGATION },
-  { value: "CONCLUDED_WITH_FINDING", labelAr: EXCEPTION_STATUS_LABELS_AR.CONCLUDED_WITH_FINDING },
-  { value: "CLOSED_NO_FINDING", labelAr: EXCEPTION_STATUS_LABELS_AR.CLOSED_NO_FINDING },
-];
-
 async function fetchExceptions(
   engagementId: string,
   status: string,
@@ -47,6 +38,14 @@ async function fetchExceptions(
 
 export function FindingsView() {
   const { t } = useT();
+  const labels = useLabels();
+  const STATUS_OPTIONS: { value: string; labelAr?: string; labelKey?: MessageKey }[] = [
+    { value: "ALL", labelKey: "findings.view.allStatuses" },
+    { value: "OPEN", labelAr: labels.exceptionStatus.OPEN },
+    { value: "UNDER_INVESTIGATION", labelAr: labels.exceptionStatus.UNDER_INVESTIGATION },
+    { value: "CONCLUDED_WITH_FINDING", labelAr: labels.exceptionStatus.CONCLUDED_WITH_FINDING },
+    { value: "CLOSED_NO_FINDING", labelAr: labels.exceptionStatus.CLOSED_NO_FINDING },
+  ];
   const engagementId = useUIStore((s) => s.engagementId);
   const [status, setStatus] = useState("ALL");
   const [showNew, setShowNew] = useState(false);
@@ -134,6 +133,7 @@ function ExceptionRow({
   onToggle: () => void;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   return (
     <div className="surface overflow-hidden rounded-xl border shadow-card">
       <button
@@ -153,12 +153,12 @@ function ExceptionRow({
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${MATTER_PRIORITY_BADGE[ex.priority]}`}
         >
-          {MATTER_PRIORITY_LABELS_AR[ex.priority]}
+          {labels.matterPriority[ex.priority]}
         </span>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${EXCEPTION_STATUS_BADGE[ex.status as ExceptionStatus]}`}
         >
-          {EXCEPTION_STATUS_LABELS_AR[ex.status as ExceptionStatus]}
+          {labels.exceptionStatus[ex.status as ExceptionStatus]}
         </span>
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-[rgb(var(--muted))] transition-transform ${expanded ? "rotate-180" : ""}`}

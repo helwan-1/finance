@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useT } from "@/lib/i18n/use-t";
-import { SEVERITY_LABELS_AR } from "@/lib/labels";
+import { useLabels } from "@/lib/i18n/use-labels";
 import type {
   AuditResultsResponse,
   MatterPriority,
@@ -35,6 +35,7 @@ export function NewExceptionDialog({
   presetResultLabel?: string;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   const queryClient = useQueryClient();
   const [firstResultId, setFirstResultId] = useState(presetResultId ?? "");
   const [title, setTitle] = useState("");
@@ -128,7 +129,7 @@ export function NewExceptionDialog({
               <option value="">{t("findings.newException.selectResult")}</option>
               {results.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.resultCode} · {SEVERITY_LABELS_AR[r.severity]} · {r.dispositionState}
+                  {r.resultCode} · {labels.severity[r.severity]} · {r.dispositionState}
                 </option>
               ))}
             </select>

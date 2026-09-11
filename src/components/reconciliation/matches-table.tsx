@@ -2,13 +2,15 @@
 
 import { ArrowLeftRight } from "lucide-react";
 import type { ReconMatchDTO } from "@/lib/ui-types";
-import { MATCH_STATUS_BADGE, MATCH_STATUS_LABELS_AR } from "@/lib/labels";
+import { MATCH_STATUS_BADGE } from "@/lib/labels";
 import { formatCurrency } from "@/lib/format";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 /** Tabular view of reconciliation matches (bank ⇄ ledger). */
 export function MatchesTable({ matches }: { matches: ReconMatchDTO[] }) {
   const { t } = useT();
+  const labels = useLabels();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-right text-sm">
@@ -51,7 +53,7 @@ export function MatchesTable({ matches }: { matches: ReconMatchDTO[] }) {
                   <span
                     className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${MATCH_STATUS_BADGE[m.status]}`}
                   >
-                    {MATCH_STATUS_LABELS_AR[m.status]}
+                    {labels.matchStatus[m.status]}
                   </span>
                 </td>
                 <td className="px-3 py-2.5">

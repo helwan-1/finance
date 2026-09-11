@@ -4,14 +4,15 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2, Loader2, X } from "lucide-react";
 import type { DocumentDTO, DocumentType } from "@/lib/ui-types";
-import { DOCUMENT_TYPE_LABELS_AR } from "@/lib/labels";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
-const TYPES = Object.keys(DOCUMENT_TYPE_LABELS_AR) as DocumentType[];
 const input = "surface w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500/40";
 
 export function DocumentActions({ doc }: { doc: DocumentDTO }) {
   const { t } = useT();
+  const labels = useLabels();
+  const TYPES = Object.keys(labels.documentType) as DocumentType[];
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [fileName, setFileName] = useState(doc.fileName);
@@ -89,7 +90,7 @@ export function DocumentActions({ doc }: { doc: DocumentDTO }) {
             <label className="block space-y-1 text-sm">
               <span className="text-[rgb(var(--muted))]">{t("documents.type")}</span>
               <select className={input} value={type} onChange={(e) => setType(e.target.value as DocumentType)}>
-                {TYPES.map((t) => <option key={t} value={t}>{DOCUMENT_TYPE_LABELS_AR[t]}</option>)}
+                {TYPES.map((t) => <option key={t} value={t}>{labels.documentType[t]}</option>)}
               </select>
             </label>
             {save.isError && <p className="text-sm text-severity-critical">{t("documents.saveFailed")}</p>}

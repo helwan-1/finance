@@ -7,14 +7,10 @@ import type {
   AnomalyDetailResponse,
   AnomalyStatus,
 } from "@/lib/ui-types";
-import {
-  RULE_LABELS_AR,
-  SEVERITY_BADGE,
-  SEVERITY_LABELS_AR,
-  STATUS_LABELS_AR,
-} from "@/lib/labels";
+import { SEVERITY_BADGE } from "@/lib/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/use-t";
+import { useLabels } from "@/lib/i18n/use-labels";
 
 type ActionKey = "RESOLVE" | "DISMISS" | "ESCALATE";
 const ACTION_STATUS: Record<ActionKey, AnomalyStatus> = {
@@ -54,6 +50,7 @@ export function AnomalyDetailDialog({
   onClose: () => void;
 }) {
   const { t } = useT();
+  const labels = useLabels();
   const queryClient = useQueryClient();
 
   const { data, isPending, isError } = useQuery({
@@ -115,13 +112,13 @@ export function AnomalyDetailDialog({
               <div className="flex flex-wrap items-center gap-2">
                 <h4 className="text-base font-bold">{a.titleAr}</h4>
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${SEVERITY_BADGE[a.severity]}`}>
-                  {SEVERITY_LABELS_AR[a.severity]}
+                  {labels.severity[a.severity]}
                 </span>
                 <span className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] text-[rgb(var(--muted))] dark:bg-white/5">
-                  {a.auditRuleName ?? RULE_LABELS_AR[a.ruleCode]}
+                  {a.auditRuleName ?? labels.rule[a.ruleCode]}
                 </span>
                 <span className="rounded-full border px-2 py-0.5 text-[11px] text-[rgb(var(--muted))]">
-                  {STATUS_LABELS_AR[a.status]}
+                  {labels.status[a.status]}
                 </span>
               </div>
               <p className="text-sm text-[rgb(var(--foreground))]">{a.descriptionAr}</p>
