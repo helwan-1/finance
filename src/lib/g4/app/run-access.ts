@@ -389,46 +389,35 @@ export async function deleteDataset(actor: RunActor, datasetId: string): Promise
     }
 
     try {
-      // Tear down every dependent row bottom-up (child before parent) so no DB
-      // ON DELETE action fires — several dataset FKs are composite (auditFirmId,
-      // …) with SET NULL, which would otherwise null the NOT NULL auditFirmId.
-      // Legacy G1 transactions + their dependents first:
-      const txns = await tx.transaction.findMany({ where: { datasetId }, select: { id: true } });
-      const txnIds = txns.map((t) => t.id);
-      if (txnIds.length > 0) {
-        await tx.reconciliationMatch.deleteMany({ where: { OR: [{ sourceTxnId: { in: txnIds } }, { targetTxnId: { in: txnIds } }] } });
-        await tx.anomalyFlag.deleteMany({ where: { transactionId: { in: txnIds } } });
-        await tx.transaction.deleteMany({ where: { datasetId } });
-      }
-      // G3 canonical facts (leaf → root):
-      await tx.journalLine.deleteMany({ where: { datasetId } });
-      await tx.trialBalanceRow.deleteMany({ where: { datasetId } });
-      await tx.journalEntry.deleteMany({ where: { datasetId } });
-      await tx.trialBalance.deleteMany({ where: { datasetId } });
-      await tx.datasetAccount.deleteMany({ where: { datasetId } });
-      await tx.sourceAccountingContext.deleteMany({ where: { datasetId } });
-      // G2 custody:
-      await tx.importIssue.deleteMany({ where: { datasetId } });
-      await tx.importedRecord.deleteMany({ where: { datasetId } });
-      // Clear the self-referential RESTRICT FK, then remove the dataset itself.
-      await tx.importBatch.updateMany({ where: { resultDatasetId: datasetId }, data: { resultDatasetId: null } });
-      await tx.dataset.delete({ where: { id: datasetId } });
+      // The runtime role (audit_app) has DELETE revoked on the immutable
+      // accounting tables, so the bottom-up teardown runs through a least-
+      // privilege SECURITY DEFINER function (owner-owned, granted only to
+      // audit_app; see migration *_g6_dataset_delete_fn). The function re-checks
+      // firm ownership and that the dataset is unconsumed before deleting.
+      await tx.$queryRaw`SELECT public.app_delete_dataset(${actor.auditFirmId}, ${datasetId})`;
     } catch (e) {
       const code = (e as { code?: string })?.code;
-      // A RESTRICT FK (a run/evidence table) means it is still referenced.
-      if (code === "P2003") {
+      const msg = e instanceof Error ? e.message : String(e);
+      // The function raises this when the dataset is frozen audit evidence.
+      if (/used in an audit run/i.test(msg)) {
+        throw new RunValidationError(
+          "لا يمكن حذف مجموعة بيانات مستخدمة في عملية تدقيق (دليل ثابت). أنشئ استيرادًا جديدًا بدلًا من ذلك.",
+        );
+      }
+      // A RESTRICT FK (a run/evidence table) still references it.
+      if (code === "P2003" || /foreign key/i.test(msg)) {
         throw new RunValidationError("لا يمكن حذف هذه المجموعة لأنها مرتبطة بسجلات تدقيق.");
       }
-      // DELETE is revoked from the runtime role on immutable accounting tables —
-      // canonical data (journal entries / trial balances) is protected by design.
-      if (code === "P2010" || /permission denied/i.test(e instanceof Error ? e.message : "")) {
+      // Should not happen once the function is deployed + granted; kept as a
+      // clear message if the migration has not yet been applied.
+      if (/permission denied/i.test(msg)) {
         throw new RunValidationError(
-          "لا يمكن حذف بيانات محاسبية ثابتة عبر دور التطبيق (حماية عدم التغيير). المجموعات الأخرى غير ضارة — اختر المجموعة الصحيحة عند إنشاء العملية.",
+          "لا يمكن حذف بيانات محاسبية ثابتة عبر دور التطبيق (حماية عدم التغيير). تأكّد من تطبيق آخر التحديثات (الترحيلات).",
         );
       }
       console.error("[datasets:delete] failed", e);
       if (!isProduction()) {
-        throw new RunValidationError(`تعذّر الحذف — ${code ? code + ": " : ""}${e instanceof Error ? e.message : String(e)}`);
+        throw new RunValidationError(`تعذّر الحذف — ${code ? code + ": " : ""}${msg}`);
       }
       throw e;
     }
