@@ -69,7 +69,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
     return NextResponse.json(result, { status: result.status === "READY" ? 201 : 200 });
-  } catch {
+  } catch (e) {
+    // Log the real cause server-side (visible in `docker compose logs web`); the
+    // client message stays generic. Common cause in production: STORAGE_LOCAL_DIR
+    // not set to an absolute, persistent (non-/tmp) path — see src/lib/storage.
+    console.error("[imports:start] failed", e);
     return NextResponse.json({ error: "تعذّر بدء الاستيراد" }, { status: 503 });
   }
 }
