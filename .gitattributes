@@ -1,0 +1,4 @@
+# Keep shell scripts LF even on Windows checkouts, so the container can exec them
+# (a CRLF shebang breaks `#!/bin/sh` → "no such file or directory").
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf

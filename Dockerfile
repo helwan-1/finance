@@ -35,7 +35,9 @@ ENV NODE_ENV=production
 # ننسخ المشروع كاملاً (يتضمّن node_modules مع prisma/tsx، ومخرجات .next، والمصدر).
 COPY --from=build /app ./
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Strip any CRLF (Windows git checkouts) so the shebang stays "#!/bin/sh", then
+# make it executable — otherwise exec fails with "no such file or directory".
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # الأمر الافتراضي: تشغيل الواجهة متاحةً على كل الواجهات.
